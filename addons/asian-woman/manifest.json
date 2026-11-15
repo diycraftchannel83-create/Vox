@@ -1,0 +1,35 @@
+{
+  "id": "asian-woman",
+  "name": "Asian Woman",
+  "version": "1.0.0",
+  "category": "premade-avatar",
+  "format": "glb",
+  "assetFile": "asian_woman.glb",
+  "assetBundled": false,
+  "installMode": "download-and-import",
+  "source": {
+    "title": "Rigged Standing Asian Female Character Idle Pose",
+    "creator": "florah",
+    "url": "https://sketchfab.com/3d-models/rigged-standing-asian-female-character-idle-pose-b31b024797194829af4637fbfb6838b7",
+    "license": "CC BY",
+    "licenseVerificationRequiredBeforeRedistribution": true
+  },
+  "capabilities": {
+    "staticMesh": true,
+    "pbrMaterials": true,
+    "embeddedTextures": true,
+    "skeletalAnimationInCurrentVox": false,
+    "facialMorphTargetsVerified": false,
+    "lipsyncReady": false
+  },
+  "compatibility": {
+    "gltfVersion": "2.0",
+    "currentImporter": "AvatarImporter",
+    "currentParser": "GltfModelParser"
+  },
+  "notes": [
+    "Download the model from the creator source and store the resulting single-file GLB as asian_woman.glb before importing.",
+    "Current Vox GLTF parser does not implement JOINTS_0/WEIGHTS_0 skinning or animation playback.",
+    "Facial morph targets required by Vox viseme controller have not been verified for this asset."
+  ]
+}

@@ -34,7 +34,7 @@ For each morph target, export both position and normal deltas. Name the targets 
 
 - The GLB importer reads embedded GLB buffers and embedded images. A standalone .gltf file that depends on external .bin or image files is not self-contained and is not a suitable delivery format yet.
 - The current renderer applies facial position and normal morph deltas on the CPU and uploads dynamic vertex buffers.
-- The current renderer does not yet implement glTF skeletal skinning, animation clips, normal-map sampling, or full metallic-roughness texture channels.
+- The current renderer applies CPU facial morph deltas followed by CPU linear-blend skinning in bind pose, and uploads the deformed mesh for preview/export. This integration has not yet been build- or device-verified. glTF animation clips, animated joint poses, normal-map sampling, and full metallic-roughness texture channels are not yet supported.
 - The current audio analyzer derives approximate visemes from audio frequency bands. It is not phoneme-level speech recognition; accurate lip sync will require phoneme/viseme timestamps from a speech-alignment or TTS source.
 
 ## Acceptance checklist

@@ -51,7 +51,7 @@ Minimum facial controls:
 
 ## Rendering strategy
 
-The current custom OpenGL ES renderer is a prototype. It currently supports static mesh rendering, a limited PBR-like shader, base-color textures, and CPU-applied facial POSITION/NORMAL morph deltas. It does not yet implement glTF skeletal skinning, glTF animation clips, normal-map sampling, or full metallic-roughness texture channels.
+The current custom OpenGL ES renderer is a prototype. It supports static mesh rendering, base-color textures, CPU-applied facial POSITION/NORMAL morph deltas, and CPU linear-blend skinning in the bind pose. The renderer applies morphs first and skinning second, then uploads deformed positions/normals for both preview and the shared video-export renderer. It does not yet parse or play glTF animation clips, animate intermediary non-joint nodes, sample normal maps, or consume full metallic-roughness texture channels.
 
 Recommended direction:
 1. Preserve the current renderer as a fallback while building a separate renderer integration branch.
@@ -97,7 +97,7 @@ No provider is selected in this phase. A provider must be selected only after it
 
 ### Phase 1 — Runtime foundation
 - Add a renderer abstraction and GLB asset validation.
-- Implement or integrate skeletal skinning and animation.
+- Complete glTF animation import/playback, including node hierarchy evaluation, and verify the existing bind-pose CPU skinning integration.
 - Add normal/roughness/occlusion texture support and correct tangent-space shading.
 - Support independent left/right facial controls and robust morph weights.
 - Ensure preview/export share animation evaluation.
@@ -135,6 +135,6 @@ A character is marked Production Ready only when:
 
 ## Current limitations and truth-in-labeling
 
-The bundled `asian_woman.glb` is only a small static mesh and is not a production digital-human model. The current importer supports embedded GLB geometry, embedded images, base-color material data, and facial morph POSITION/NORMAL deltas. External glTF resource files are rejected with an explicit error (use a self-contained GLB). Skeletal skinning data can be imported and a CPU reference deformation core exists, but runtime pose animation is not connected to the renderer. glTF animation clips, normal-map sampling, and full PBR texture channels are not currently supported. The existing audio analyzer estimates visemes from audio bands; it is not phoneme-level alignment.
+The bundled `asian_woman.glb` is only a small static mesh and is not a production digital-human model. The current importer supports embedded GLB geometry, embedded images, base-color material data, and facial morph POSITION/NORMAL deltas. External glTF resource files are rejected with an explicit error (use a self-contained GLB). Skeletal skinning data is imported and the CPU linear-blend skinning path is connected to the renderer in bind pose; this has not yet been build- or device-verified. Runtime glTF animation clips and animated joint poses are not implemented. Normal-map sampling and full PBR texture channels are also not currently supported. The existing audio analyzer estimates visemes from audio bands; it is not phoneme-level alignment.
 
 Do not claim that AI Face Generator, photorealistic characters, skeletal animation, or Filament rendering are implemented until their respective phases have been completed and tested.

@@ -307,14 +307,29 @@ object GltfModelParser {
             }
             val joints = List(jointNodes.length()) { jointIndex ->
                 val nodeIndex = jointNodes.getInt(jointIndex)
-                val node = nodes.getJSONObject(nodeIndex)
-                val local = nodeLocalMatrix(node)
-                var parent = parents.getOrElse(nodeIndex) { -1 }
-                while (parent >= 0 && parent !in nodeToJoint) parent = parents.getOrElse(parent) { -1 }
+                var ancestor = parents.getOrElse(nodeIndex) { -1 }
+                while (ancestor >= 0 && ancestor !in nodeToJoint) {
+                    ancestor = parents.getOrElse(ancestor) { -1 }
+                }
+                val parentJoint = nodeToJoint[ancestor] ?: -1
+
+                // Preserve transforms of non-joint nodes between two joints.
+                val chain = ArrayList<Int>()
+                var cursor = nodeIndex
+                while (cursor >= 0 && cursor != ancestor) {
+                    chain.add(cursor)
+                    cursor = parents.getOrElse(cursor) { -1 }
+                }
+                val local = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
+                for (chainIndex in chain.indices.reversed()) {
+                    val next = FloatArray(16)
+                    Matrix.multiplyMM(next, 0, local, 0, nodeLocalMatrix(nodes.getJSONObject(chain[chainIndex])), 0)
+                    System.arraycopy(next, 0, local, 0, 16)
+                }
                 AvatarJoint(
-                    name = node.optString("name", "joint_$jointIndex"),
+                    name = nodes.getJSONObject(nodeIndex).optString("name", "joint_$jointIndex"),
                     nodeIndex = nodeIndex,
-                    parentIndex = nodeToJoint[parent] ?: -1,
+                    parentIndex = parentJoint,
                     bindLocalMatrix = local,
                     inverseBindMatrix = inverseBind.copyOfRange(jointIndex * 16, jointIndex * 16 + 16)
                 )

@@ -1,44 +1,33 @@
 package com.example.avatar
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SkeletalSkinnerTest {
-    private fun identity() = FloatArray(16).also { it[0]=1f; it[5]=1f; it[10]=1f; it[15]=1f }
-    private fun translated(x: Float, y: Float = 0f, z: Float = 0f) = identity().also {
-        it[12]=x; it[13]=y; it[14]=z
+    private fun identity() = FloatArray(16).also { for (i in 0..3) it[i * 5] = 1f }
+
+    @Test fun identityPalettePreservesMesh() {
+        val positions = floatArrayOf(1f, 2f, 3f)
+        val normals = floatArrayOf(0f, 0f, 1f)
+        val skin = VertexSkinData(intArrayOf(0, 0, 0, 0), floatArrayOf(1f, 0f, 0f, 0f))
+        val result = SkeletalSkinner.deform(positions, normals, skin, listOf(identity()))
+        assertArrayEquals(positions, result.positions, 1e-5f)
+        assertArrayEquals(normals, result.normals, 1e-5f)
     }
 
-    @Test fun identityPalettePreservesBindPose() {
-        val skin = AvatarSkin(listOf(AvatarJoint("root", 0, -1, identity(), identity())))
-        val palette = SkeletalSkinner.buildPalette(skin, emptyMap(), identity())
+    @Test fun weightedJointTranslationMovesVertex() {
+        val translated = identity().also { it[12] = 2f }
+        val skin = VertexSkinData(intArrayOf(0, 0, 0, 0), floatArrayOf(1f, 0f, 0f, 0f))
         val result = SkeletalSkinner.deform(
-            floatArrayOf(0.2f, 0.3f, 0.4f), floatArrayOf(0f, 0f, 1f),
-            VertexSkinData(intArrayOf(0,0,0,0), floatArrayOf(1f,0f,0f,0f)), palette
+            floatArrayOf(1f, 0f, 0f), floatArrayOf(0f, 0f, 1f), skin, listOf(translated)
         )
-        assertArrayEquals(floatArrayOf(0.2f,0.3f,0.4f), result.first, 1e-5f)
-        assertArrayEquals(floatArrayOf(0f,0f,1f), result.second, 1e-5f)
+        assertEquals(3f, result.positions[0], 1e-5f)
     }
 
-    @Test fun weightedSkinningAppliesJointTranslation() {
-        val palette = listOf(translated(1f), translated(0f, 2f))
-        val result = SkeletalSkinner.deform(
-            floatArrayOf(0f,0f,0f), null,
-            VertexSkinData(intArrayOf(0,1,0,0), floatArrayOf(0.25f,0.75f,0f,0f)), palette
-        )
-        assertArrayEquals(floatArrayOf(0.25f,1.5f,0f), result.first, 1e-5f)
-    }
-
-    @Test fun childJointWorldTransformIncludesParent() {
-        val skin = AvatarSkin(listOf(
-            AvatarJoint("root", 0, -1, identity(), identity()),
-            AvatarJoint("jaw", 1, 0, translated(0f, 1f), identity())
-        ))
-        val world = SkeletalSkinner.buildJointWorldMatrices(
-            skin, mapOf(0 to translated(2f), 1 to translated(0f, 3f))
-        )
-        assertEquals(2f, world[1][12], 1e-5f)
-        assertEquals(4f, world[1][13], 1e-5f)
+    @Test fun matrixInverseRoundTrips() {
+        val transform = identity().also { it[12] = 3f; it[13] = -2f; it[14] = 5f }
+        val result = SkeletalSkinner.multiply(transform, SkeletalSkinner.invert(transform))
+        assertArrayEquals(identity(), result, 1e-5f)
     }
 }

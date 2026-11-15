@@ -1,31 +1,26 @@
 # Premade Add-on: Asian Woman
 
-This addon registers a downloadable/importable Asian woman avatar asset for Vox.
+Vox now includes the actual binary GLB asset at `asian_woman.glb`.
 
-## Candidate source
+## Asset details
 
-**Rigged Standing Asian Female Character Idle Pose** by florah  
-Source: https://sketchfab.com/3d-models/rigged-standing-asian-female-character-idle-pose-b31b024797194829af4637fbfb6838b7
+- Format: glTF 2.0 Binary (.glb)
+- Type: original stylized low-poly full-body female avatar
+- Materials: per-vertex colors; no external texture files
+- License: CC0-1.0 (original geometry generated for this project)
+- File: `addons/asian-woman/asian_woman.glb`
 
-The source listing describes a full-body Asian female character with a complete skeleton rig, PBR textures, and a neutral standing pose. It is published under **Creative Commons Attribution (CC BY)**. Before bundling or redistributing the downloaded model, preserve the author's required attribution and include the exact license notice from the downloaded asset page/archive.
+## Import into Vox
 
-## Install
+1. Open **3D Avatars & Stage**.
+2. Choose **Import Custom 3D Avatar**.
+3. Select `asian_woman.glb` from the repository checkout or copy it to the device first.
+4. Vox copies the selected GLB into app-private avatar storage.
 
-1. Download the model from its source page using the creator's download control.
-2. Export/download as a single **glTF 2.0 Binary (.glb)** file with embedded textures.
-3. Save it as `asian_woman.glb`.
-4. In Vox, open **3D Avatars & Stage → Import Custom 3D Avatar** and select the file.
+## Current compatibility
 
-Vox currently imports GLB through `AvatarImporter` and `GltfModelParser`. The importer copies the selected model to app-private storage and creates an imported avatar entry.
+The asset contains static mesh geometry only. The current `GltfModelParser` can parse its positions and vertex colors. It does not yet implement glTF skinning (`JOINTS_0` / `WEIGHTS_0`) or animation playback.
 
-## Compatibility notes
+The model does not include facial morph targets, so it is not lipsync-ready. To enable talking animation, a future asset revision needs facial viseme morph targets and Vox needs corresponding parser/renderer support.
 
-- Use GLB 2.0 with embedded buffer and image data.
-- Prefer a neutral A-pose or relaxed idle pose.
-- The current Vox GLTF parser reads mesh positions, normals, UVs, materials, and position morph targets. It does **not** currently implement glTF skinning/joint weights or animation playback. Therefore, although the source model is rigged, Vox will currently render its static mesh only.
-- The current audio-driven face controller requires compatible facial morph targets. A body rig alone does not provide viseme/lipsync.
-- For actual talking animation, prepare a derivative with supported facial morph targets (for example jawOpen, mouthClose, mouthFunnel, mouthSmile, eyeBlink) and extend the importer/renderer to support glTF skinning and animation before describing the addon as fully animated.
-
-## Attribution
-
-When redistributing the asset, include the creator's name, the source URL, and the CC BY license/version and any required changes notice. Do not redistribute the downloaded GLB until the source download page's exact license terms have been verified and complied with.
+This is a stylized low-poly starter asset, not a photorealistic character scan.

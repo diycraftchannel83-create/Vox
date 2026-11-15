@@ -10,7 +10,7 @@ This gate is intentionally evidence-based. A successful Gradle build, valid GLB 
 - Android Release workflow run #15 completed successfully on 2026-11-15, including `compileDebugKotlin`, signed `assembleRelease`, and `bundleRelease`.
 - The workflow is a build signal only; no device lab, visual quality, audio synchronization, crash-free, or Play Console acceptance evidence is included in that result.
 - The two bundled copies of `asian_woman.glb` are each 3,996 bytes. The project asset specification already identifies this as a small static prototype mesh, not a production digital-human asset.
-- The current TTS generator sets `Locale.US`; multilingual production behavior is not yet demonstrated.
+- The TTS generator now accepts an explicit BCP-47 language tag and checks whether the installed Android TTS engine supports it. A studio language selector is present for Indonesian, English, Arabic, Japanese, and Korean; actual voice availability and pronunciation quality still require device-level verification.
 - The current audio analyzer estimates visemes from audio frequency bands. This is not phoneme alignment.
 - The current custom renderer does not yet consume full normal/roughness/occlusion maps or play all glTF skeletal and morph-weight animation channels.
 

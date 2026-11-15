@@ -1,0 +1,34 @@
+package com.example.avatar
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class DigitalHumanAssetValidatorTest {
+    private fun validMesh(morphs: List<MorphTargetData> = emptyList(), normals: FloatArray = floatArrayOf(0f,0f,1f,0f,0f,1f,0f,0f,1f)) =
+        MeshPart("head", floatArrayOf(0f,0f,0f,1f,0f,0f,0f,1f,0f), normals,
+            floatArrayOf(0f,0f,1f,0f,0f,1f), intArrayOf(0,1,2),
+            floatArrayOf(0.8f,0.6f,0.5f,1f), morphTargets = morphs)
+
+    @Test fun emptyModelIsRejected() {
+        val report = DigitalHumanAssetValidator.inspect(AvatarModel3D("empty","Empty",emptyList()))
+        assertTrue(report.hasErrors)
+        assertFalse(report.isStructurallyReady)
+    }
+    @Test fun mismatchedNormalArrayIsRejected() {
+        val report = DigitalHumanAssetValidator.inspect(AvatarModel3D("bad","Bad",listOf(validMesh(normals=floatArrayOf(0f,0f,1f)))))
+        assertTrue(report.findings.any { it.code == "invalid_normals_0" })
+    }
+    @Test fun staticMeshIsNotMarkedProductionReady() {
+        val report = DigitalHumanAssetValidator.inspect(AvatarModel3D("static","Static",listOf(validMesh())))
+        assertTrue(report.isStructurallyReady)
+        assertFalse(report.productionReady)
+        assertTrue(report.findings.any { it.code == "no_facial_rig" })
+    }
+    @Test fun malformedMorphDeltaIsRejected() {
+        val morph = MorphTargetData("jawOpen", floatArrayOf(0f,0f,0f))
+        val report = DigitalHumanAssetValidator.inspect(AvatarModel3D("bad-morph","Bad Morph",listOf(validMesh(morphs=listOf(morph)))))
+        assertTrue(report.hasErrors)
+        assertTrue(report.findings.any { it.code == "invalid_morph_position_0" })
+    }
+}

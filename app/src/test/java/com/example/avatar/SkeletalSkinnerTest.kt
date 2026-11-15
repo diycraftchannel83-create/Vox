@@ -30,4 +30,19 @@ class SkeletalSkinnerTest {
         val result = SkeletalSkinner.multiply(transform, SkeletalSkinner.invert(transform))
         assertArrayEquals(identity(), result, 1e-5f)
     }
+    @Test fun nonUniformJointScaleUsesInverseTransposeForNormals() {
+        val scaled = identity().also { it[0] = 2f }
+        val skin = VertexSkinData(intArrayOf(0, 0, 0, 0), floatArrayOf(1f, 0f, 0f, 0f))
+        val result = SkeletalSkinner.deform(
+            floatArrayOf(0f, 0f, 0f),
+            floatArrayOf(1f, 1f, 0f),
+            skin,
+            listOf(scaled)
+        )
+        val expectedX = 0.4472136f
+        val expectedY = 0.8944272f
+        assertEquals(expectedX, result.normals[0], 1e-5f)
+        assertEquals(expectedY, result.normals[1], 1e-5f)
+    }
+
 }

@@ -48,7 +48,7 @@ data class AvatarSkin(
     val meshNodeIndex: Int? = null
 )
 
-/** Skinning data is imported now; GPU skinning is a separate renderer milestone. */
+/** Mesh data supports CPU morph deformation followed by CPU linear-blend skinning. */
 data class MeshPart(
     val name: String,
     val positions: FloatArray,

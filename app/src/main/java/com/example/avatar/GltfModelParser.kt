@@ -240,12 +240,16 @@ object GltfModelParser {
             val uri = bufObj.optString("uri", "")
             val bytes = when {
                 uri.isEmpty() && i == 0 && binChunk != null -> binChunk
+                uri.isEmpty() && binChunk == null -> error("glTF buffer $i has no embedded data. Import a self-contained GLB or embed the buffer as a data URI.")
                 uri.startsWith("data:") -> {
                     val comma = uri.indexOf(',')
-                    if (comma >= 0) Base64.decode(uri.substring(comma + 1), Base64.DEFAULT) else ByteArray(0)
+                    require(comma >= 0) { "glTF buffer $i has an invalid data URI." }
+                    Base64.decode(uri.substring(comma + 1), Base64.DEFAULT)
                 }
-                else -> ByteArray(0)
+                else -> error("External glTF buffer '$uri' is not supported. Package the model as a self-contained GLB.")
             }
+            val expectedLength = bufObj.optInt("byteLength", bytes.size)
+            require(bytes.size >= expectedLength) { "glTF buffer $i is shorter than its declared byteLength." }
             out.add(bytes)
         }
         return out
@@ -259,7 +263,10 @@ object GltfModelParser {
         val uri = imgObj.optString("uri", "")
         val rawBytes = if (uri.startsWith("data:")) {
             val comma = uri.indexOf(',')
+            require(comma >= 0) { "glTF image has an invalid data URI." }
             Base64.decode(uri.substring(comma + 1), Base64.DEFAULT)
+        } else if (uri.isNotEmpty()) {
+            error("External glTF image '$uri' is not supported. Embed textures in the GLB file.")
         } else if (imgObj.has("bufferView")) {
             val bv = bufferViews.getJSONObject(imgObj.getInt("bufferView"))
             val bufIdx = bv.optInt("buffer", 0)

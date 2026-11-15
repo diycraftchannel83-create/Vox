@@ -135,6 +135,6 @@ A character is marked Production Ready only when:
 
 ## Current limitations and truth-in-labeling
 
-The bundled `asian_woman.glb` is only a small static mesh and is not a production digital-human model. The current importer supports embedded GLB geometry, embedded images, base-color material data, and facial morph POSITION/NORMAL deltas. External glTF resource files, skeletal skinning, animation clips, normal-map sampling, and full PBR texture channels are not currently supported. The existing audio analyzer estimates visemes from audio bands; it is not phoneme-level alignment.
+The bundled `asian_woman.glb` is only a small static mesh and is not a production digital-human model. The current importer supports embedded GLB geometry, embedded images, base-color material data, and facial morph POSITION/NORMAL deltas. External glTF resource files are rejected with an explicit error (use a self-contained GLB). Skeletal skinning data can be imported and a CPU reference deformation core exists, but runtime pose animation is not connected to the renderer. glTF animation clips, normal-map sampling, and full PBR texture channels are not currently supported. The existing audio analyzer estimates visemes from audio bands; it is not phoneme-level alignment.
 
 Do not claim that AI Face Generator, photorealistic characters, skeletal animation, or Filament rendering are implemented until their respective phases have been completed and tested.

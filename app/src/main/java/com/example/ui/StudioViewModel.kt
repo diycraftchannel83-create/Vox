@@ -389,9 +389,17 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 dao.insertImportedAvatar(entity)
                 prefs.setSelectedAvatar(entity.id)
                 _activeModel.value = model
-                _statusMessage.value =
-                    "Imported ${entity.name} (${entity.triangleCount} tris" +
-                        if (entity.morphTargetCount > 0) ", ${entity.morphTargetCount} morphs)" else ", auto-rigged)"
+                val assetReport = DigitalHumanAssetValidator.inspect(model)
+                val skinReady = model.parts.any { it.skinData != null && it.skinIndex != null }
+                val rigSummary = when {
+                    entity.morphTargetCount > 0 && skinReady -> "${entity.morphTargetCount} morphs, skeletal data detected (runtime animation pending)"
+                    entity.morphTargetCount > 0 -> "${entity.morphTargetCount} facial morphs"
+                    skinReady -> "skeletal data detected (runtime animation pending)"
+                    else -> "static mesh; no facial rig detected"
+                }
+                val warningCount = assetReport.findings.count { it.severity == DigitalHumanAssetValidator.Severity.WARNING }
+                _statusMessage.value = "Imported ${entity.name} (${entity.triangleCount} tris; $rigSummary)" +
+                    if (warningCount > 0) " • $warningCount quality warnings" else ""
             } catch (e: Exception) {
                 _errorMessage.value = e.message ?: "Failed to import 3D model."
             } finally {

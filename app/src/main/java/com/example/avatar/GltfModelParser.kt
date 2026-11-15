@@ -27,19 +27,24 @@ object GltfModelParser {
         if (magic == 0x46546C67) { // "glTF" binary GLB
             val version = bb.getInt(4)
             require(version == 2) { "Only glTF 2.0 GLB files are supported." }
+            val declaredLength = bb.getInt(8)
+            require(declaredLength == bytes.size) { "GLB header length does not match the file size." }
             var offset = 12
             var jsonStr: String? = null
             var binData: ByteArray? = null
             while (offset + 8 <= bytes.size) {
                 val chunkLength = bb.getInt(offset)
                 val chunkType = bb.getInt(offset + 4)
+                require(chunkLength >= 0) { "GLB contains a negative chunk length." }
                 val dataStart = offset + 8
-                val dataEnd = (dataStart + chunkLength).coerceAtMost(bytes.size)
+                val dataEnd = dataStart.toLong() + chunkLength.toLong()
+                require(dataEnd <= bytes.size.toLong()) { "GLB chunk exceeds the file boundary." }
+                val safeDataEnd = dataEnd.toInt()
                 when (chunkType) {
-                    0x4E4F534A -> jsonStr = String(bytes, dataStart, dataEnd - dataStart, Charsets.UTF_8)
-                    0x004E4942 -> binData = bytes.copyOfRange(dataStart, dataEnd)
+                    0x4E4F534A -> jsonStr = String(bytes, dataStart, safeDataEnd - dataStart, Charsets.UTF_8)
+                    0x004E4942 -> binData = bytes.copyOfRange(dataStart, safeDataEnd)
                 }
-                offset = dataEnd
+                offset = safeDataEnd
             }
             jsonText = requireNotNull(jsonStr) { "GLB missing JSON chunk." }
             binChunk = binData
@@ -72,6 +77,22 @@ object GltfModelParser {
             val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
             for (i in 0 until rootNodes.length()) {
                 traverseNode(rootNodes.getInt(i), identity, nodes, meshTransforms, null)
+            }
+        } else if (nodes.length() > 0) {
+            // A glTF file may omit the scenes array. In that case render the node forest
+            // rather than discarding node transforms and skin references.
+            val hasParent = BooleanArray(nodes.length())
+            for (nodeIndex in 0 until nodes.length()) {
+                val children = nodes.getJSONObject(nodeIndex).optJSONArray("children") ?: continue
+                for (i in 0 until children.length()) {
+                    val child = children.getInt(i)
+                    require(child in hasParent.indices) { "glTF node child index is out of range." }
+                    hasParent[child] = true
+                }
+            }
+            val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
+            for (nodeIndex in hasParent.indices) {
+                if (!hasParent[nodeIndex]) traverseNode(nodeIndex, identity, nodes, meshTransforms)
             }
         } else {
             val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
@@ -351,7 +372,8 @@ object GltfModelParser {
         require(acc.optString("type") == "MAT4" && acc.optInt("componentType") == 5126) {
             "inverseBindMatrices must use FLOAT MAT4 accessors."
         }
-        val count = min(acc.getInt("count"), expectedCount)
+        val count = acc.getInt("count")
+        require(count == expectedCount) { "inverseBindMatrices count must match the skin joint count." }
         val viewIndex = acc.optInt("bufferView", -1)
         require(viewIndex >= 0) { "inverseBindMatrices accessor has no bufferView." }
         val view = bufferViews.getJSONObject(viewIndex)

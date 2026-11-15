@@ -53,6 +53,12 @@ class AvatarImporter(private val context: Context) {
                 )
             )
 
+            val validation = DigitalHumanAssetValidator.inspect(model)
+            require(!validation.hasErrors) {
+                val firstError = validation.findings.firstOrNull { it.severity == DigitalHumanAssetValidator.Severity.ERROR }
+                firstError?.message ?: "The selected 3D avatar failed structural validation."
+            }
+
             val entity = ImportedAvatarEntity(
                 id = id,
                 name = cleanName,
@@ -82,7 +88,7 @@ class AvatarImporter(private val context: Context) {
         }
         val file = File(spec.filePath)
         if (!file.exists()) {
-            return ProceduralAvatarFactory.buildAvatar("nova")
+            throw IllegalStateException("Avatar asset is missing: ${file.name}. Re-import the GLB file.")
         }
         return when (spec.format) {
             AvatarFormat.OBJ -> ObjModelParser.parse(file, spec.id, spec.name)

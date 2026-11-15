@@ -25,11 +25,11 @@ jobs:
         shell: bash
         run: |
           mapfile -t files < <(find app/src/main/assets/avatars -maxdepth 1 -type f -name '*.glb' ! -name 'asian_woman.glb' ! -name 'asian_woman_v2.glb' | sort)
-          if [ "\${#files[@]}" -eq 0 ]; then
+          if [ "${#files[@]}" -eq 0 ]; then
             echo "found=false" >> "$GITHUB_OUTPUT"
             echo "::warning::No production GLB supplied yet. Asset gate remains pending."
           else
-            printf '%s\\n' "\${files[@]}" > /tmp/production-glb-list
+            printf '%s\n' "${files[@]}" > /tmp/production-glb-list
             echo "found=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Validate each production GLB and rights manifest

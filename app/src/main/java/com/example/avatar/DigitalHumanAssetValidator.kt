@@ -27,11 +27,17 @@ object DigitalHumanAssetValidator {
         if (model.totalTriangles < 1) error("empty_surface", "The avatar contains no triangles.")
         model.parts.forEachIndexed { index, part ->
             if (part.positions.size % 3 != 0) error("invalid_positions_$index", "Mesh $index has an invalid POSITION array.")
+            if (part.positions.any { !it.isFinite() }) error("non_finite_positions_$index", "Mesh $index contains non-finite vertex coordinates.")
+            if (part.normals.any { !it.isFinite() }) error("non_finite_normals_$index", "Mesh $index contains non-finite normal values.")
+            if (part.nodeWorldMatrix.size != 16 || part.nodeWorldMatrix.any { !it.isFinite() }) error("invalid_node_transform_$index", "Mesh $index has an invalid node transform.")
             if (part.normals.size != part.positions.size) error("invalid_normals_$index", "Mesh $index NORMAL count does not match POSITION.")
             if (part.uvs.size != part.vertexCount * 2) warning("missing_uv_$index", "Mesh $index has incomplete TEXCOORD_0.")
             if (part.indices.isEmpty() || part.indices.size % 3 != 0) error("invalid_indices_$index", "Mesh $index has no valid triangle index list.")
+            if (part.baseColor.any { !it.isFinite() || it !in 0f..1f }) error("invalid_base_color_$index", "Mesh $index has base color values outside the finite 0..1 range.")
             else if (part.indices.any { it < 0 || it >= part.vertexCount }) error("index_out_of_range_$index", "Mesh $index contains an out-of-range index.")
             if (part.baseColor.size < 4) error("invalid_material_$index", "Mesh $index has no RGBA base color.")
+            if (part.skinIndex != null && part.skinData == null) error("missing_skin_influences_$index", "Mesh $index references a skin but has no JOINTS_0 / WEIGHTS_0 data.")
+            if (part.skinData != null && part.skinIndex == null) warning("unbound_skin_influences_$index", "Mesh $index has vertex influences but is not attached to a glTF skin.")
             part.skinData?.let { skin ->
                 if (skin.jointIndices.size != part.vertexCount * 4 || skin.weights.size != part.vertexCount * 4) {
                     error("invalid_skin_influence_count_$index", "Mesh $index must provide four joint indices and weights per vertex.")

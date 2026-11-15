@@ -35,7 +35,9 @@ class AvatarGlRenderer(
         val textureId: Int,
         val indexCount: Int,
         val dynamicPosScratch: FloatArray?,
-        val dynamicPosBuffer: FloatBuffer?
+        val dynamicPosBuffer: FloatBuffer?,
+        val dynamicNormScratch: FloatArray?,
+        val dynamicNormBuffer: FloatBuffer?
     )
 
     private var avatarProgram: ShaderProgram? = null
@@ -231,6 +233,41 @@ class AvatarGlRenderer(
                 GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, gp.vboPos)
                 GLES30.glBufferSubData(GLES30.GL_ARRAY_BUFFER, 0, dst.size * 4, gp.dynamicPosBuffer)
                 GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+
+                // Morph normals together with positions so skin shading stays coherent
+                // around animated lips, cheeks, eyelids, and jaw geometry.
+                if (gp.dynamicNormScratch != null && gp.dynamicNormBuffer != null) {
+                    val baseNormals = gp.part.normals
+                    val normalDst = gp.dynamicNormScratch
+                    System.arraycopy(baseNormals, 0, normalDst, 0, baseNormals.size)
+                    for (mt in gp.part.morphTargets) {
+                        val w = rig.weightForMorphName(mt.name)
+                        val deltas = mt.normalDeltas
+                        if (w > 0.002f && deltas != null && deltas.size == normalDst.size) {
+                            for (k in normalDst.indices) normalDst[k] += deltas[k] * w
+                        }
+                    }
+                    var n = 0
+                    while (n + 2 < normalDst.size) {
+                        val len = kotlin.math.sqrt(
+                            normalDst[n] * normalDst[n] +
+                                normalDst[n + 1] * normalDst[n + 1] +
+                                normalDst[n + 2] * normalDst[n + 2]
+                        ).coerceAtLeast(1e-6f)
+                        normalDst[n] /= len
+                        normalDst[n + 1] /= len
+                        normalDst[n + 2] /= len
+                        n += 3
+                    }
+                    gp.dynamicNormBuffer.clear()
+                    gp.dynamicNormBuffer.put(normalDst)
+                    gp.dynamicNormBuffer.position(0)
+                    GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, gp.vboNorm)
+                    GLES30.glBufferSubData(
+                        GLES30.GL_ARRAY_BUFFER, 0, normalDst.size * 4, gp.dynamicNormBuffer
+                    )
+                    GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+                }
             }
 
             GLES30.glBindVertexArray(gp.vao)
@@ -357,7 +394,12 @@ class AvatarGlRenderer(
             GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, 0, 0)
 
             GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vboNorm)
-            GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, part.normals.size * 4, normBuf, GLES30.GL_STATIC_DRAW)
+            GLES30.glBufferData(
+                GLES30.GL_ARRAY_BUFFER,
+                part.normals.size * 4,
+                normBuf,
+                if (hasMorphs) GLES30.GL_DYNAMIC_DRAW else GLES30.GL_STATIC_DRAW
+            )
             GLES30.glEnableVertexAttribArray(1)
             GLES30.glVertexAttribPointer(1, 3, GLES30.GL_FLOAT, false, 0, 0)
 
@@ -386,6 +428,11 @@ class AvatarGlRenderer(
                 dynamicPosScratch = if (hasMorphs) FloatArray(part.positions.size) else null,
                 dynamicPosBuffer = if (hasMorphs) {
                     ByteBuffer.allocateDirect(part.positions.size * 4)
+                        .order(ByteOrder.nativeOrder()).asFloatBuffer()
+                } else null,
+                dynamicNormScratch = if (hasMorphs) FloatArray(part.normals.size) else null,
+                dynamicNormBuffer = if (hasMorphs) {
+                    ByteBuffer.allocateDirect(part.normals.size * 4)
                         .order(ByteOrder.nativeOrder()).asFloatBuffer()
                 } else null
             )

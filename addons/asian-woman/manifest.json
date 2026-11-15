@@ -1,25 +1,24 @@
 {
   "id": "asian-woman",
   "name": "Asian Woman",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "category": "premade-avatar",
   "format": "glb",
   "assetFile": "asian_woman.glb",
-  "assetBundled": false,
-  "installMode": "download-and-import",
+  "assetBundled": true,
+  "installMode": "bundled-or-import",
   "source": {
-    "title": "Rigged Standing Asian Female Character Idle Pose",
-    "creator": "florah",
-    "url": "https://sketchfab.com/3d-models/rigged-standing-asian-female-character-idle-pose-b31b024797194829af4637fbfb6838b7",
-    "license": "CC BY",
-    "licenseVerificationRequiredBeforeRedistribution": true
+    "title": "Original low-poly avatar mesh generated for Vox",
+    "creator": "Vox project",
+    "license": "CC0-1.0",
+    "thirdPartyAsset": false
   },
   "capabilities": {
     "staticMesh": true,
-    "pbrMaterials": true,
-    "embeddedTextures": true,
-    "skeletalAnimationInCurrentVox": false,
-    "facialMorphTargetsVerified": false,
+    "vertexColors": true,
+    "embeddedTextures": false,
+    "skeletalAnimation": false,
+    "facialMorphTargets": false,
     "lipsyncReady": false
   },
   "compatibility": {
@@ -28,8 +27,9 @@
     "currentParser": "GltfModelParser"
   },
   "notes": [
-    "Download the model from the creator source and store the resulting single-file GLB as asian_woman.glb before importing.",
-    "Current Vox GLTF parser does not implement JOINTS_0/WEIGHTS_0 skinning or animation playback.",
-    "Facial morph targets required by Vox viseme controller have not been verified for this asset."
+    "The repository contains the actual binary GLB asset at addons/asian-woman/asian_woman.glb.",
+    "This is an original stylized low-poly full-body avatar built from colored mesh geometry; it is not a photorealistic scanned character.",
+    "The current Vox GLTF parser renders static geometry only and does not implement JOINTS_0/WEIGHTS_0 skinning or animation playback.",
+    "Facial morph targets are not included, so audio-driven viseme lipsync is not supported by this asset yet."
   ]
 }

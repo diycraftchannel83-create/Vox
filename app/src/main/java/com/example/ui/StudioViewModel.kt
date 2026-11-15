@@ -350,13 +350,22 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     languageTag = languageTag
                 )
                 val shortTitle = text.trim().take(28).let { if (text.trim().length > 28) "$it..." else it }
-                val clip = audioDecoder.decodeWavFileToClip(
+                val decodedClip = audioDecoder.decodeWavFileToClip(
                     wavFile = wav,
                     title = shortTitle,
                     sourceLabel = "Voice Script · $languageTag"
                 )
+                // Android TextToSpeech does not expose reliable phoneme timestamps on
+                // all engines. Use script-timed visemes for generated speech instead of
+                // pretending raw FFT bands identify exact phonemes.
+                val clip = decodedClip.copy(
+                    timeline = com.example.audio.PhonemeVisemeTimelineBuilder.buildFromText(
+                        text = text,
+                        durationMs = decodedClip.durationMs
+                    )
+                )
                 activateAudioClip(clip, autoPlay = true)
-                _statusMessage.value = "Synthesized $languageTag speech & synchronized ${clip.timeline.frames.size} facial frames"
+                _statusMessage.value = "Synthesized $languageTag speech with script-timed lip-sync (${clip.timeline.frames.size} facial frames)"
             } catch (e: Exception) {
                 _errorMessage.value = e.message ?: "Speech synthesis failed."
             } finally {

@@ -9,7 +9,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+// Robolectric 4.16.1 does not provide a runtime SDK implementation for API 36.
+// The test only checks a packaged string resource, so API 35 is sufficient.
+@Config(sdk = [35])
 class ExampleRobolectricTest {
 
   @Test

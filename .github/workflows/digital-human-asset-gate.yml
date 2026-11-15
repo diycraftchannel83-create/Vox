@@ -1,0 +1,40 @@
+name: Digital Human Asset Gate
+
+on:
+  pull_request:
+    paths:
+      - "app/src/main/assets/avatars/**"
+      - "scripts/check_digital_human_glb.py"
+      - ".github/workflows/digital-human-asset-gate.yml"
+      - "docs/DIGITAL_HUMAN_ASSET_PIPELINE.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-digital-human:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Find production GLB candidates
+        id: assets
+        shell: bash
+        run: |
+          mapfile -t files < <(find app/src/main/assets/avatars -maxdepth 1 -type f -name '*.glb' ! -name 'asian_woman.glb' ! -name 'asian_woman_v2.glb' | sort)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No production GLB supplied yet. Asset gate remains pending."
+          else
+            printf '%s\n' "${files[@]}" > /tmp/production-glb-list
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Validate each production GLB and rights manifest
+        if: steps.assets.outputs.found == 'true'
+        run: |
+          while IFS= read -r asset; do
+            python scripts/check_digital_human_glb.py "$asset"
+          done < /tmp/production-glb-list

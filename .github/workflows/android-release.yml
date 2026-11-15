@@ -39,6 +39,11 @@ jobs:
           set -euo pipefail
           gradle --no-daemon compileDebugKotlin
 
+      - name: Run JVM unit tests
+        run: |
+          set -euo pipefail
+          gradle --no-daemon testDebugUnitTest
+
       - name: Validate signing secrets
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

@@ -333,20 +333,30 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun synthesizeScript(text: String, pitch: Float = 1.0f, rate: Float = 1.0f) {
+    fun synthesizeScript(
+        text: String,
+        pitch: Float = 1.0f,
+        rate: Float = 1.0f,
+        languageTag: String = java.util.Locale.getDefault().toLanguageTag()
+    ) {
         player.pause()
         viewModelScope.launch {
             _isProcessingAudio.value = true
             try {
-                val wav = ttsGenerator.synthesizeToWav(text, pitch = pitch, rate = rate)
+                val wav = ttsGenerator.synthesizeToWav(
+                    text = text,
+                    pitch = pitch,
+                    rate = rate,
+                    languageTag = languageTag
+                )
                 val shortTitle = text.trim().take(28).let { if (text.trim().length > 28) "$it..." else it }
                 val clip = audioDecoder.decodeWavFileToClip(
                     wavFile = wav,
                     title = shortTitle,
-                    sourceLabel = "Voice Script"
+                    sourceLabel = "Voice Script · $languageTag"
                 )
                 activateAudioClip(clip, autoPlay = true)
-                _statusMessage.value = "Synthesized speech & synchronized ${clip.timeline.frames.size} facial frames"
+                _statusMessage.value = "Synthesized $languageTag speech & synchronized ${clip.timeline.frames.size} facial frames"
             } catch (e: Exception) {
                 _errorMessage.value = e.message ?: "Speech synthesis failed."
             } finally {

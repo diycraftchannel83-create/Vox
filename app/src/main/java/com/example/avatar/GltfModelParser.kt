@@ -76,7 +76,7 @@ object GltfModelParser {
             val rootNodes = scene.optJSONArray("nodes") ?: JSONArray()
             val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
             for (i in 0 until rootNodes.length()) {
-                traverseNode(rootNodes.getInt(i), identity, nodes, meshTransforms)
+                traverseNode(rootNodes.getInt(i), identity, nodes, meshTransforms, BooleanArray(nodes.length()))
             }
         } else if (nodes.length() > 0) {
             // A glTF file may omit the scenes array. In that case render the node forest
@@ -92,7 +92,7 @@ object GltfModelParser {
             }
             val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
             for (nodeIndex in hasParent.indices) {
-                if (!hasParent[nodeIndex]) traverseNode(nodeIndex, identity, nodes, meshTransforms)
+                if (!hasParent[nodeIndex]) traverseNode(nodeIndex, identity, nodes, meshTransforms, BooleanArray(nodes.length()))
             }
         } else {
             val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
@@ -414,22 +414,32 @@ object GltfModelParser {
         nodeIdx: Int,
         parentMat: FloatArray,
         nodes: JSONArray,
-        outMeshes: MutableList<MeshNodeInstance>
+        outMeshes: MutableList<MeshNodeInstance>,
+        activePath: BooleanArray
     ) {
-        if (nodeIdx !in 0 until nodes.length()) return
-        val node = nodes.getJSONObject(nodeIdx)
-        val local = nodeLocalMatrix(node)
-        val world = FloatArray(16)
-        Matrix.multiplyMM(world, 0, parentMat, 0, local, 0)
+        require(nodeIdx in 0 until nodes.length()) { "glTF scene references an out-of-range node index." }
+        require(!activePath[nodeIdx]) { "glTF node hierarchy contains a cycle at node $nodeIdx." }
+        activePath[nodeIdx] = true
+        try {
+            val node = nodes.getJSONObject(nodeIdx)
+            val local = nodeLocalMatrix(node)
+            require(local.size == 16 && local.all { it.isFinite() }) { "glTF node $nodeIdx has an invalid transform." }
+            val world = FloatArray(16)
+            Matrix.multiplyMM(world, 0, parentMat, 0, local, 0)
 
-        if (node.has("mesh")) {
-            outMeshes.add(MeshNodeInstance(node.getInt("mesh"), world, nodeIdx, node.optInt("skin", -1)))
-        }
-        val children = node.optJSONArray("children")
-        if (children != null) {
-            for (i in 0 until children.length()) {
-                traverseNode(children.getInt(i), world, nodes, outMeshes)
+            if (node.has("mesh")) {
+                val meshIndex = node.getInt("mesh")
+                require(meshIndex >= 0) { "glTF node $nodeIdx has a negative mesh index." }
+                outMeshes.add(MeshNodeInstance(meshIndex, world, nodeIdx, node.optInt("skin", -1)))
             }
+            val children = node.optJSONArray("children")
+            if (children != null) {
+                for (i in 0 until children.length()) {
+                    traverseNode(children.getInt(i), world, nodes, outMeshes, activePath)
+                }
+            }
+        } finally {
+            activePath[nodeIdx] = false
         }
     }
 }

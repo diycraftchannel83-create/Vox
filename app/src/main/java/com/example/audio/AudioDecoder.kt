@@ -129,8 +129,16 @@ class AudioDecoder(private val context: Context) {
                 }
             }
         } finally {
-            codec.stop()
+            try {
+                codec.stop()
+            } catch (_: IllegalStateException) {
+                // The codec may not have reached the started state if configure/start failed.
+            }
             codec.release()
+        }
+
+        require(sawOutputEos) {
+            "Audio exceeds the current 90-second import limit. Trim or split the file before importing."
         }
 
         val rawBytes = pcmBytes.toByteArray()

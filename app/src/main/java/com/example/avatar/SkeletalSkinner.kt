@@ -78,9 +78,10 @@ object SkeletalSkinner {
                 outPositions[base + 2] += (matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14]) * weight
 
                 val nx = normals[base]; val ny = normals[base + 1]; val nz = normals[base + 2]
-                outNormals[base] += (matrix[0] * nx + matrix[4] * ny + matrix[8] * nz) * weight
-                outNormals[base + 1] += (matrix[1] * nx + matrix[5] * ny + matrix[9] * nz) * weight
-                outNormals[base + 2] += (matrix[2] * nx + matrix[6] * ny + matrix[10] * nz) * weight
+                val transformedNormal = transformNormalInverseTranspose(matrix, nx, ny, nz)
+                outNormals[base] += transformedNormal[0] * weight
+                outNormals[base + 1] += transformedNormal[1] * weight
+                outNormals[base + 2] += transformedNormal[2] * weight
                 total += weight
             }
             if (total <= 1e-8f) {
@@ -103,6 +104,32 @@ object SkeletalSkinner {
             }
         }
         return DeformedMesh(outPositions, outNormals)
+    }
+
+    /** Correct normal transform for non-uniform joint scale: inverse-transpose of the 3x3 linear part. */
+    private fun transformNormalInverseTranspose(m: FloatArray, x: Float, y: Float, z: Float): FloatArray {
+        val a = m[0]; val b = m[4]; val c = m[8]
+        val d = m[1]; val e = m[5]; val f = m[9]
+        val g = m[2]; val h = m[6]; val i = m[10]
+        val c00 = e * i - f * h
+        val c01 = f * g - d * i
+        val c02 = d * h - e * g
+        val c10 = c * h - b * i
+        val c11 = a * i - c * g
+        val c12 = b * g - a * h
+        val c20 = b * f - c * e
+        val c21 = c * d - a * f
+        val c22 = a * e - b * d
+        val determinant = a * c00 + b * c01 + c * c02
+        if (kotlin.math.abs(determinant) < 1e-10f) {
+            return floatArrayOf(a * x + b * y + c * z, d * x + e * y + f * z, g * x + h * y + i * z)
+        }
+        val invDet = 1f / determinant
+        return floatArrayOf(
+            (c00 * x + c01 * y + c02 * z) * invDet,
+            (c10 * x + c11 * y + c12 * z) * invDet,
+            (c20 * x + c21 * y + c22 * z) * invDet
+        )
     }
 
     fun multiply(a: FloatArray, b: FloatArray): FloatArray {

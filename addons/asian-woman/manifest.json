@@ -19,17 +19,20 @@
     "embeddedTextures": false,
     "skeletalAnimation": false,
     "facialMorphTargets": false,
-    "lipsyncReady": false
+    "lipsyncReady": false,
+    "vertexColorsRenderedByCurrentVox": false
   },
   "compatibility": {
     "gltfVersion": "2.0",
     "currentImporter": "AvatarImporter",
-    "currentParser": "GltfModelParser"
+    "currentParser": "GltfModelParser",
+    "bundledAndroidAsset": "app/src/main/assets/avatars/asian_woman.glb"
   },
   "notes": [
-    "The repository contains the actual binary GLB asset at addons/asian-woman/asian_woman.glb.",
-    "This is an original stylized low-poly full-body avatar built from colored mesh geometry; it is not a photorealistic scanned character.",
-    "The current Vox GLTF parser renders static geometry only and does not implement JOINTS_0/WEIGHTS_0 skinning or animation playback.",
-    "Facial morph targets are not included, so audio-driven viseme lipsync is not supported by this asset yet."
+    "The GLB is bundled at addons/asian-woman/asian_woman.glb and app/src/main/assets/avatars/asian_woman.glb.",
+    "The original stylized low-poly full-body avatar is registered as the built-in Asian Woman roster entry.",
+    "The parser reads static mesh geometry but does not currently render COLOR_0 vertex colors.",
+    "The current parser does not implement JOINTS_0/WEIGHTS_0 skinning or animation playback.",
+    "No facial morph targets are included; audio-driven viseme lip-sync is not supported."
   ]
 }

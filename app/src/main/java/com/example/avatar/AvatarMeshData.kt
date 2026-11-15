@@ -36,13 +36,16 @@ data class VertexSkinData(
 
 data class AvatarJoint(
     val name: String,
+    val nodeIndex: Int,
     val parentIndex: Int,
+    val bindLocalMatrix: FloatArray,
     val inverseBindMatrix: FloatArray
 )
 
 data class AvatarSkin(
     val joints: List<AvatarJoint>,
-    val skeletonRootNode: Int? = null
+    val skeletonRootNode: Int? = null,
+    val meshNodeIndex: Int? = null
 )
 
 /** Skinning data is imported now; GPU skinning is a separate renderer milestone. */

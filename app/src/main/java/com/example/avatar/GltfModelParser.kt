@@ -57,12 +57,13 @@ object GltfModelParser {
         val textures = root.optJSONArray("textures") ?: JSONArray()
         val images = root.optJSONArray("images") ?: JSONArray()
         val nodes = root.optJSONArray("nodes") ?: JSONArray()
+        val skinsJson = root.optJSONArray("skins") ?: JSONArray()
 
         val decodedBitmaps = HashMap<Int, Bitmap>()
         val parts = ArrayList<MeshPart>()
 
         // Traverse scene nodes to collect world transforms per mesh
-        val meshTransforms = ArrayList<Pair<Int, FloatArray>>()
+        val meshTransforms = ArrayList<MeshNodeInstance>()
         val scenes = root.optJSONArray("scenes")
         val sceneIdx = root.optInt("scene", 0)
         if (scenes != null && scenes.length() > 0 && nodes.length() > 0) {
@@ -70,16 +71,20 @@ object GltfModelParser {
             val rootNodes = scene.optJSONArray("nodes") ?: JSONArray()
             val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
             for (i in 0 until rootNodes.length()) {
-                traverseNode(rootNodes.getInt(i), identity, nodes, meshTransforms)
+                traverseNode(rootNodes.getInt(i), identity, nodes, meshTransforms, null)
             }
         } else {
             val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
             for (m in 0 until meshes.length()) {
-                meshTransforms.add(m to identity)
+                meshTransforms.add(MeshNodeInstance(m, identity, null, -1))
             }
         }
 
-        for ((meshIdx, worldMat) in meshTransforms) {
+        val avatarSkins = parseSkins(skinsJson, nodes, accessors, bufferViews, buffers)
+
+        for (instance in meshTransforms) {
+            val meshIdx = instance.meshIndex
+            val worldMat = instance.worldMatrix
             val meshObj = meshes.optJSONObject(meshIdx) ?: continue
             val meshName = meshObj.optString("name", "mesh_$meshIdx")
             val targetNames = meshObj.optJSONObject("extras")?.optJSONArray("targetNames")
@@ -208,7 +213,8 @@ object GltfModelParser {
                     partRole = PartRole.CUSTOM_DEFORMABLE,
                     morphTargets = morphList,
                     isSkin = true,
-                    skinData = skinData
+                    skinData = skinData,
+                    skinIndex = instance.skinIndex.takeIf { it >= 0 }
                 )
             }
         }
@@ -224,7 +230,8 @@ object GltfModelParser {
             autoJawMaxY = -0.04f,
             autoMouthCenterY = -0.15f,
             autoMouthFrontZ = 0.14f,
-            isCustomImported = true
+            isCustomImported = true,
+            skins = avatarSkins
         )
     }
 
@@ -274,11 +281,100 @@ object GltfModelParser {
         }
     }
 
+    private data class MeshNodeInstance(
+        val meshIndex: Int, val worldMatrix: FloatArray, val nodeIndex: Int?, val skinIndex: Int
+    )
+
+    private fun parseSkins(
+        skins: JSONArray, nodes: JSONArray, accessors: JSONArray,
+        bufferViews: JSONArray, buffers: List<ByteArray>
+    ): List<AvatarSkin> {
+        val parents = IntArray(nodes.length()) { -1 }
+        for (nodeIndex in 0 until nodes.length()) {
+            val children = nodes.getJSONObject(nodeIndex).optJSONArray("children") ?: continue
+            for (i in 0 until children.length()) {
+                val child = children.getInt(i)
+                if (child in parents.indices) parents[child] = nodeIndex
+            }
+        }
+        return List(skins.length()) { skinIndex ->
+            val skin = skins.getJSONObject(skinIndex)
+            val jointNodes = skin.optJSONArray("joints") ?: JSONArray()
+            val nodeToJoint = HashMap<Int, Int>()
+            for (i in 0 until jointNodes.length()) nodeToJoint[jointNodes.getInt(i)] = i
+            val inverseBindAccessor = skin.optInt("inverseBindMatrices", -1)
+            val inverseBind = if (inverseBindAccessor >= 0) {
+                readMat4Float(accessors.getJSONObject(inverseBindAccessor), bufferViews, buffers, jointNodes.length())
+            } else FloatArray(jointNodes.length() * 16).also { out ->
+                for (i in 0 until jointNodes.length()) Matrix.setIdentityM(out, i * 16)
+            }
+            val joints = List(jointNodes.length()) { jointIndex ->
+                val nodeIndex = jointNodes.getInt(jointIndex)
+                val node = nodes.getJSONObject(nodeIndex)
+                val local = nodeLocalMatrix(node)
+                var parent = parents.getOrElse(nodeIndex) { -1 }
+                while (parent >= 0 && parent !in nodeToJoint) parent = parents.getOrElse(parent) { -1 }
+                AvatarJoint(
+                    name = node.optString("name", "joint_$jointIndex"),
+                    nodeIndex = nodeIndex,
+                    parentIndex = nodeToJoint[parent] ?: -1,
+                    bindLocalMatrix = local,
+                    inverseBindMatrix = inverseBind.copyOfRange(jointIndex * 16, jointIndex * 16 + 16)
+                )
+            }
+            AvatarSkin(joints, skin.optInt("skeleton", -1).takeIf { it >= 0 })
+        }
+    }
+
+    private fun readMat4Float(
+        acc: JSONObject, bufferViews: JSONArray, buffers: List<ByteArray>, expectedCount: Int
+    ): FloatArray {
+        require(acc.optString("type") == "MAT4" && acc.optInt("componentType") == 5126) {
+            "inverseBindMatrices must use FLOAT MAT4 accessors."
+        }
+        val count = min(acc.getInt("count"), expectedCount)
+        val viewIndex = acc.optInt("bufferView", -1)
+        require(viewIndex >= 0) { "inverseBindMatrices accessor has no bufferView." }
+        val view = bufferViews.getJSONObject(viewIndex)
+        val bytes = buffers[view.optInt("buffer", 0)]
+        val stride = view.optInt("byteStride", 64).coerceAtLeast(64)
+        val start = view.optInt("byteOffset", 0) + acc.optInt("byteOffset", 0)
+        val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val out = FloatArray(expectedCount * 16)
+        for (i in 0 until count) for (j in 0 until 16) {
+            val offset = start + i * stride + j * 4
+            require(offset + 4 <= bytes.size) { "inverseBindMatrices accessor exceeds buffer bounds." }
+            out[i * 16 + j] = bb.getFloat(offset)
+        }
+        return out
+    }
+
+    private fun nodeLocalMatrix(node: JSONObject): FloatArray {
+        val local = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
+        val matrix = node.optJSONArray("matrix")
+        if (matrix != null && matrix.length() == 16) {
+            for (i in 0 until 16) local[i] = matrix.getDouble(i).toFloat()
+            return local
+        }
+        node.optJSONArray("translation")?.takeIf { it.length() >= 3 }?.let {
+            Matrix.translateM(local, 0, it.getDouble(0).toFloat(), it.getDouble(1).toFloat(), it.getDouble(2).toFloat())
+        }
+        node.optJSONArray("rotation")?.takeIf { it.length() >= 4 }?.let {
+            val rot = quatToMatrix(it.getDouble(0).toFloat(), it.getDouble(1).toFloat(), it.getDouble(2).toFloat(), it.getDouble(3).toFloat())
+            val tmp = FloatArray(16); Matrix.multiplyMM(tmp, 0, local, 0, rot, 0); System.arraycopy(tmp, 0, local, 0, 16)
+        }
+        node.optJSONArray("scale")?.takeIf { it.length() >= 3 }?.let {
+            Matrix.scaleM(local, 0, it.getDouble(0).toFloat(), it.getDouble(1).toFloat(), it.getDouble(2).toFloat())
+        }
+        return local
+    }
+
     private fun traverseNode(
         nodeIdx: Int,
         parentMat: FloatArray,
         nodes: JSONArray,
-        outMeshes: MutableList<Pair<Int, FloatArray>>
+        outMeshes: MutableList<MeshNodeInstance>,
+        parentNodeIndex: Int? = null
     ) {
         if (nodeIdx !in 0 until nodes.length()) return
         val node = nodes.getJSONObject(nodeIdx)
@@ -315,12 +411,279 @@ object GltfModelParser {
         Matrix.multiplyMM(world, 0, parentMat, 0, local, 0)
 
         if (node.has("mesh")) {
-            outMeshes.add(node.getInt("mesh") to world)
+            outMeshes.add(MeshNodeInstance(node.getInt("mesh"), world, nodeIdx, node.optInt("skin", -1)))
         }
         val children = node.optJSONArray("children")
         if (children != null) {
             for (i in 0 until children.length()) {
-                traverseNode(children.getInt(i), world, nodes, outMeshes)
+                traverseNode(children.getInt(i), world, nodes, outMeshes, nodeIdx)
+            }
+        }
+    }
+
+    private fun quatToMatrix(x: Float, y: Float, z: Float, w: Float): FloatArray {
+        val m = FloatArray(16)
+        val xx = x * x; val yy = y * y; val zz = z * z
+        val xy = x * y; val xz = x * z; val yz = y * z
+        val wx = w * x; val wy = w * y; val wz = w * z
+        m[0] = 1f - 2f * (yy + zz); m[4] = 2f * (xy - wz); m[8] = 2f * (xz + wy); m[12] = 0f
+        m[1] = 2f * (xy + wz); m[5] = 1f - 2f * (xx + zz); m[9] = 2f * (yz - wx); m[13] = 0f
+        m[2] = 2f * (xz - wy); m[6] = 2f * (yz + wx); m[10] = 1f - 2f * (xx + yy); m[14] = 0f
+        m[3] = 0f; m[7] = 0f; m[11] = 0f; m[15] = 1f
+        return m
+    }
+
+    private fun readVec4Ints(
+        acc: JSONObject, bufferViews: JSONArray, buffers: List<ByteArray>, expectedCount: Int
+    ): IntArray {
+        val count = min(acc.getInt("count"), expectedCount)
+        val componentType = acc.getInt("componentType")
+        val componentBytes = when (componentType) { 5121 -> 1; 5123 -> 2; else -> error("Unsupported JOINTS_0 componentType: $componentType") }
+        val bvIndex = acc.optInt("bufferView", -1)
+        require(bvIndex >= 0) { "JOINTS_0 accessor has no bufferView." }
+        val view = bufferViews.getJSONObject(bvIndex)
+        val bytes = buffers[view.optInt("buffer", 0)]
+        val elementBytes = componentBytes * 4
+        val stride = view.optInt("byteStride", elementBytes).coerceAtLeast(elementBytes)
+        val start = view.optInt("byteOffset", 0) + acc.optInt("byteOffset", 0)
+        val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val out = IntArray(expectedCount * 4)
+        for (v in 0 until count) for (c in 0..3) {
+            val offset = start + v * stride + c * componentBytes
+            require(offset + componentBytes <= bytes.size) { "JOINTS_0 accessor exceeds buffer bounds." }
+            out[v * 4 + c] = if (componentType == 5121) bytes[offset].toInt() and 0xFF else bb.getShort(offset).toInt() and 0xFFFF
+        }
+        return out
+    }
+
+    private fun readVec4Weights(
+        acc: JSONObject, bufferViews: JSONArray, buffers: List<ByteArray>, expectedCount: Int
+    ): FloatArray {
+        val count = min(acc.getInt("count"), expectedCount)
+        val componentType = acc.getInt("componentType")
+        val normalized = acc.optBoolean("normalized", false)
+        val componentBytes = when (componentType) { 5121 -> 1; 5123 -> 2; 5126 -> 4; else -> error("Unsupported WEIGHTS_0 componentType: $componentType") }
+        val bvIndex = acc.optInt("bufferView", -1)
+        require(bvIndex >= 0) { "WEIGHTS_0 accessor has no bufferView." }
+        val view = bufferViews.getJSONObject(bvIndex)
+        val bytes = buffers[view.optInt("buffer", 0)]
+        val elementBytes = componentBytes * 4
+        val stride = view.optInt("byteStride", elementBytes).coerceAtLeast(elementBytes)
+        val start = view.optInt("byteOffset", 0) + acc.optInt("byteOffset", 0)
+        val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val out = FloatArray(expectedCount * 4)
+        for (v in 0 until count) {
+            var total = 0f
+            for (c in 0..3) {
+                val offset = start + v * stride + c * componentBytes
+                require(offset + componentBytes <= bytes.size) { "WEIGHTS_0 accessor exceeds buffer bounds." }
+                val value = when (componentType) {
+                    5121 -> (bytes[offset].toInt() and 0xFF).toFloat() / if (normalized) 255f else 1f
+                    5123 -> (bb.getShort(offset).toInt() and 0xFFFF).toFloat() / if (normalized) 65535f else 1f
+                    else -> bb.getFloat(offset)
+                }.coerceAtLeast(0f)
+                out[v * 4 + c] = value
+                total += value
+            }
+            if (total > 1e-8f) for (c in 0..3) out[v * 4 + c] /= total
+        }
+        return out
+    }
+
+    private fun readVec3Float(
+        acc: JSONObject,
+        bufferViews: JSONArray,
+        buffers: List<ByteArray>
+    ): FloatArray {
+        val count = acc.getInt("count")
+        val bvIdx = acc.optInt("bufferView", -1)
+        if (bvIdx < 0) return FloatArray(count * 3)
+        val bv = bufferViews.getJSONObject(bvIdx)
+        val buf = buffers[bv.optInt("buffer", 0)]
+        val baseOffset = bv.optInt("byteOffset", 0) + acc.optInt("byteOffset", 0)
+        val stride = bv.optInt("byteStride", 12).coerceAtLeast(12)
+        val bb = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN)
+        val out = FloatArray(count * 3)
+        for (i in 0 until count) {
+            val pos = baseOffset + i * stride
+            if (pos + 12 <= buf.size) {
+                out[i * 3] = bb.getFloat(pos)
+                out[i * 3 + 1] = bb.getFloat(pos + 4)
+                out[i * 3 + 2] = bb.getFloat(pos + 8)
+            }
+        }
+        return out
+    }
+
+    private fun readVec2Float(
+        acc: JSONObject,
+        bufferViews: JSONArray,
+        buffers: List<ByteArray>,
+        expectedCount: Int
+    ): FloatArray {
+        val count = min(acc.getInt("count"), expectedCount)
+        val bvIdx = acc.optInt("bufferView", -1)
+        if (bvIdx < 0) return FloatArray(expectedCount * 2)
+        val bv = bufferViews.getJSONObject(bvIdx)
+        val buf = buffers[bv.optInt("buffer", 0)]
+        val baseOffset = bv.optInt("byteOffset", 0) + acc.optInt("byteOffset", 0)
+        val stride = bv.optInt("byteStride", 8).coerceAtLeast(8)
+        val bb = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN)
+        val out = FloatArray(expectedCount * 2)
+        for (i in 0 until count) {
+            val pos = baseOffset + i * stride
+            if (pos + 8 <= buf.size) {
+                out[i * 2] = bb.getFloat(pos)
+                out[i * 2 + 1] = bb.getFloat(pos + 4)
+            }
+        }
+        return out
+    }
+
+    private fun readIndices(
+        acc: JSONObject,
+        bufferViews: JSONArray,
+        buffers: List<ByteArray>
+    ): IntArray {
+        val count = acc.getInt("count")
+        val compType = acc.getInt("componentType")
+        val bvIdx = acc.optInt("bufferView", -1)
+        if (bvIdx < 0) return IntArray(count) { it }
+        val bv = bufferViews.getJSONObject(bvIdx)
+        val buf = buffers[bv.optInt("buffer", 0)]
+        val baseOffset = bv.optInt("byteOffset", 0) + acc.optInt("byteOffset", 0)
+        val bb = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN)
+        val out = IntArray(count)
+        when (compType) {
+            5121 -> for (i in 0 until count) out[i] = buf[baseOffset + i].toInt() and 0xFF
+            5123 -> for (i in 0 until count) out[i] = bb.getShort(baseOffset + i * 2).toInt() and 0xFFFF
+            5125 -> for (i in 0 until count) out[i] = bb.getInt(baseOffset + i * 4)
+            else -> for (i in 0 until count) out[i] = i
+        }
+        return out
+    }
+
+    private fun transformPoints(pts: FloatArray, mat: FloatArray) {
+        val v = FloatArray(4)
+        val r = FloatArray(4)
+        var i = 0
+        while (i + 2 < pts.size) {
+            v[0] = pts[i]; v[1] = pts[i + 1]; v[2] = pts[i + 2]; v[3] = 1f
+            Matrix.multiplyMV(r, 0, mat, 0, v, 0)
+            pts[i] = r[0]; pts[i + 1] = r[1]; pts[i + 2] = r[2]
+            i += 3
+        }
+    }
+
+    private fun transformDeltas(deltas: FloatArray, mat: FloatArray) {
+        val v = FloatArray(4)
+        val r = FloatArray(4)
+        var i = 0
+        while (i + 2 < deltas.size) {
+            v[0] = deltas[i]; v[1] = deltas[i + 1]; v[2] = deltas[i + 2]; v[3] = 0f
+            Matrix.multiplyMV(r, 0, mat, 0, v, 0)
+            deltas[i] = r[0]; deltas[i + 1] = r[1]; deltas[i + 2] = r[2]
+            i += 3
+        }
+    }
+
+    private fun transformNormals(norms: FloatArray, mat: FloatArray) {
+        val v = FloatArray(4)
+        val r = FloatArray(4)
+        var i = 0
+        while (i + 2 < norms.size) {
+            v[0] = norms[i]; v[1] = norms[i + 1]; v[2] = norms[i + 2]; v[3] = 0f
+            Matrix.multiplyMV(r, 0, mat, 0, v, 0)
+            val len = kotlin.math.sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]).coerceAtLeast(1e-6f)
+            norms[i] = r[0] / len; norms[i + 1] = r[1] / len; norms[i + 2] = r[2] / len
+            i += 3
+        }
+    }
+
+    private fun normalizeAvatarParts(parts: List<MeshPart>) {
+        var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
+        var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+        var minZ = Float.MAX_VALUE; var maxZ = -Float.MAX_VALUE
+        for (part in parts) {
+            val pos = part.positions
+            var i = 0
+            while (i + 2 < pos.size) {
+                minX = min(minX, pos[i]); maxX = max(maxX, pos[i])
+                minY = min(minY, pos[i + 1]); maxY = max(maxY, pos[i + 1])
+                minZ = min(minZ, pos[i + 2]); maxZ = max(maxZ, pos[i + 2])
+                i += 3
+            }
+        }
+        val cx = (minX + maxX) * 0.5f
+        val cy = (minY + maxY) * 0.5f
+        val cz = (minZ + maxZ) * 0.5f
+        val maxSpan = max(maxX - minX, max(maxY - minY, maxZ - minZ)).coerceAtLeast(1e-4f)
+        val scale = 1.48f / maxSpan
+
+        for (part in parts) {
+            val pos = part.positions
+            var i = 0
+            while (i + 2 < pos.size) {
+                pos[i] = (pos[i] - cx) * scale
+                pos[i + 1] = (pos[i + 1] - cy) * scale - 0.02f
+                pos[i + 2] = (pos[i + 2] - cz) * scale
+                i += 3
+            }
+            for (mt in part.morphTargets) {
+                val d = mt.positionDeltas
+                for (k in d.indices) d[k] *= scale
+            }
+        }
+    }
+}
+
+        nodeIdx: Int,
+        parentMat: FloatArray,
+        nodes: JSONArray,
+        outMeshes: MutableList<MeshNodeInstance>,
+        parentNodeIndex: Int? = null
+    ) {
+        if (nodeIdx !in 0 until nodes.length()) return
+        val node = nodes.getJSONObject(nodeIdx)
+        val local = FloatArray(16)
+        Matrix.setIdentityM(local, 0)
+
+        val matArr = node.optJSONArray("matrix")
+        if (matArr != null && matArr.length() == 16) {
+            for (i in 0 until 16) local[i] = matArr.getDouble(i).toFloat()
+        } else {
+            val t = node.optJSONArray("translation")
+            val r = node.optJSONArray("rotation")
+            val s = node.optJSONArray("scale")
+            if (t != null && t.length() >= 3) {
+                Matrix.translateM(local, 0, t.getDouble(0).toFloat(), t.getDouble(1).toFloat(), t.getDouble(2).toFloat())
+            }
+            if (r != null && r.length() >= 4) {
+                val qMat = quatToMatrix(
+                    r.getDouble(0).toFloat(),
+                    r.getDouble(1).toFloat(),
+                    r.getDouble(2).toFloat(),
+                    r.getDouble(3).toFloat()
+                )
+                val tmp = FloatArray(16)
+                Matrix.multiplyMM(tmp, 0, local, 0, qMat, 0)
+                System.arraycopy(tmp, 0, local, 0, 16)
+            }
+            if (s != null && s.length() >= 3) {
+                Matrix.scaleM(local, 0, s.getDouble(0).toFloat(), s.getDouble(1).toFloat(), s.getDouble(2).toFloat())
+            }
+        }
+
+        val world = FloatArray(16)
+        Matrix.multiplyMM(world, 0, parentMat, 0, local, 0)
+
+        if (node.has("mesh")) {
+            outMeshes.add(MeshNodeInstance(node.getInt("mesh"), world, nodeIdx, node.optInt("skin", -1)))
+        }
+        val children = node.optJSONArray("children")
+        if (children != null) {
+            for (i in 0 until children.length()) {
+                traverseNode(children.getInt(i), world, nodes, outMeshes, nodeIdx)
             }
         }
     }

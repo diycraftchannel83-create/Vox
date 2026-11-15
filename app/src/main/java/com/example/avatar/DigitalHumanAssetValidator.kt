@@ -37,6 +37,11 @@ object DigitalHumanAssetValidator {
                     error("invalid_skin_influence_count_$index", "Mesh $index must provide four joint indices and weights per vertex.")
                 } else {
                     if (skin.jointIndices.any { it < 0 }) error("invalid_skin_joint_index_$index", "Mesh $index contains a negative joint index.")
+                    val skinIndex = part.skinIndex
+                    if (skinIndex != null && skinIndex !in model.skins.indices) error("invalid_skin_reference_$index", "Mesh $index references a missing skin.")
+                    if (skinIndex != null && skinIndex in model.skins.indices && skin.jointIndices.any { it >= model.skins[skinIndex].joints.size }) {
+                        error("skin_joint_out_of_range_$index", "Mesh $index references a joint outside its skin.")
+                    }
                     for (vertex in 0 until skin.vertexCount) {
                         val sum = (0..3).sumOf { skin.weights[vertex * 4 + it].toDouble() }.toFloat()
                         if (skin.weights.slice(vertex * 4 until vertex * 4 + 4).any { !it.isFinite() || it < 0f } || (sum > 0f && kotlin.math.abs(sum - 1f) > 0.02f)) {

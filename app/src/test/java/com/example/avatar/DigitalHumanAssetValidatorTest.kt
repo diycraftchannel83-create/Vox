@@ -25,6 +25,14 @@ class DigitalHumanAssetValidatorTest {
         assertFalse(report.productionReady)
         assertTrue(report.findings.any { it.code == "no_facial_rig" })
     }
+    @Test fun skinJointOutsideSkinIsRejected() {
+        val skin = AvatarSkin(listOf(AvatarJoint("root", 0, -1, FloatArray(16), FloatArray(16))))
+        val mesh = validMesh().copy(skinData = VertexSkinData(IntArray(12) { if (it % 4 == 0) 2 else 0 }, floatArrayOf(1f,0f,0f,0f,1f,0f,0f,0f,1f,0f,0f,0f)), skinIndex = 0)
+        val report = DigitalHumanAssetValidator.inspect(AvatarModel3D("bad-joint","Bad Joint",listOf(mesh), skins = listOf(skin)))
+        assertTrue(report.hasErrors)
+        assertTrue(report.findings.any { it.code == "skin_joint_out_of_range_0" })
+    }
+
     @Test fun malformedSkinInfluenceCountIsRejected() {
         val mesh = validMesh().copy(skinData = VertexSkinData(intArrayOf(0,0,0,0), floatArrayOf(1f,0f,0f,0f)))
         val report = DigitalHumanAssetValidator.inspect(AvatarModel3D("bad-skin","Bad Skin",listOf(mesh)))

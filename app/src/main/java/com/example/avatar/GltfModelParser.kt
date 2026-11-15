@@ -389,3 +389,25 @@ object GltfModelParser {
     }
 
     private fun traverseNode(
+        nodeIdx: Int,
+        parentMat: FloatArray,
+        nodes: JSONArray,
+        outMeshes: MutableList<MeshNodeInstance>
+    ) {
+        if (nodeIdx !in 0 until nodes.length()) return
+        val node = nodes.getJSONObject(nodeIdx)
+        val local = nodeLocalMatrix(node)
+        val world = FloatArray(16)
+        Matrix.multiplyMM(world, 0, parentMat, 0, local, 0)
+
+        if (node.has("mesh")) {
+            outMeshes.add(MeshNodeInstance(node.getInt("mesh"), world, nodeIdx, node.optInt("skin", -1)))
+        }
+        val children = node.optJSONArray("children")
+        if (children != null) {
+            for (i in 0 until children.length()) {
+                traverseNode(children.getInt(i), world, nodes, outMeshes)
+            }
+        }
+    }
+}

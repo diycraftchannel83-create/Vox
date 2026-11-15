@@ -78,8 +78,72 @@ object PhonemeVisemeTimelineBuilder {
         "UH" to Shape(VisemeType.OU, jaw = 0.25f, pucker = 0.62f),
         "UW" to Shape(VisemeType.OU, jaw = 0.2f, pucker = 0.82f),
         "W" to Shape(VisemeType.OU, jaw = 0.16f, pucker = 0.78f),
-        "Y" to Shape(VisemeType.IH, jaw = 0.22f, wide = 0.45f)
+        "Y" to Shape(VisemeType.IH, jaw = 0.22f, wide = 0.45f),
+        "HH" to Shape(VisemeType.AA, jaw = 0.22f)
     )
+
+    /**
+     * Estimates phoneme timing from a script when the TTS engine does not expose
+     * word/phoneme boundary callbacks. This is a grapheme-duration fallback, not
+     * a forced-alignment result; actual speech timing still depends on the voice.
+     */
+    fun buildFromText(
+        text: String,
+        durationMs: Long,
+        stepMs: Long = 20L,
+        transitionMs: Long = 30L
+    ): VisemeTimeline {
+        require(durationMs >= 0L) { "Audio duration cannot be negative." }
+        val normalized = text.lowercase(Locale.ROOT)
+            .replace(Regex("[^a-z]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        if (normalized.isEmpty() || durationMs == 0L) {
+            return build(durationMs, emptyList(), stepMs, transitionMs)
+        }
+
+        val tokens = mutableListOf<Pair<String, Int>>()
+        var i = 0
+        while (i < normalized.length) {
+            if (normalized[i].isWhitespace()) {
+                tokens += "SIL" to 2
+                i++
+                continue
+            }
+            val pair = if (i + 1 < normalized.length) normalized.substring(i, i + 2) else ""
+            val digraph = when (pair) {
+                "ng" -> "NG"; "ny" -> "Y"; "sy" -> "SH"; "kh" -> "K"
+                "ch" -> "CH"; "sh" -> "SH"; "th" -> "TH"; "ph" -> "F"
+                else -> null
+            }
+            if (digraph != null) {
+                tokens += digraph to 2
+                i += 2
+                continue
+            }
+            val symbol = when (normalized[i]) {
+                'a' -> "AA"; 'e' -> "EH"; 'i' -> "IY"; 'o' -> "OW"; 'u' -> "UW"
+                'p' -> "P"; 'b' -> "B"; 'm' -> "M"; 'f' -> "F"; 'v' -> "V"
+                't' -> "T"; 'd' -> "D"; 'n' -> "N"; 'l' -> "L"; 'k' -> "K"
+                'g' -> "G"; 'c' -> "S"; 's' -> "S"; 'z' -> "Z"; 'r' -> "R"
+                'j' -> "JH"; 'w' -> "W"; 'y' -> "Y"; 'h' -> "HH"
+                else -> "SIL"
+            }
+            tokens += symbol to if (symbol in setOf("AA", "EH", "IY", "OW", "UW")) 3 else 1
+            i++
+        }
+
+        val totalWeight = tokens.sumOf { it.second }.coerceAtLeast(1)
+        var cursor = 0L
+        val aligned = tokens.mapIndexedNotNull { index, token ->
+            val start = cursor
+            val share = if (index == tokens.lastIndex) durationMs - cursor
+                else (durationMs * token.second / totalWeight).coerceAtLeast(1L)
+            cursor = (cursor + share).coerceAtMost(durationMs)
+            if (token.first == "SIL") null else TimedPhoneme(token.first, start, cursor)
+        }
+        return build(durationMs, aligned, stepMs, transitionMs)
+    }
 
     fun build(
         durationMs: Long,

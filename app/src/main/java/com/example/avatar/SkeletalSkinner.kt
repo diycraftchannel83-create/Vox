@@ -17,22 +17,30 @@ object SkeletalSkinner {
             "Pose joint count does not match the skin."
         }
         val inverseMesh = invert(meshWorld)
-        val world = ArrayList<FloatArray>(skin.joints.size)
-        for (i in skin.joints.indices) {
-            val joint = skin.joints[i]
-            val local = localPose?.get(i) ?: joint.bindLocalMatrix
+        val world = arrayOfNulls<FloatArray>(skin.joints.size)
+        val resolving = BooleanArray(skin.joints.size)
+        fun resolveWorld(index: Int): FloatArray {
+            world[index]?.let { return it }
+            require(!resolving[index]) { "Joint hierarchy contains a cycle." }
+            resolving[index] = true
+            val joint = skin.joints[index]
+            val local = localPose?.get(index) ?: joint.bindLocalMatrix
             require(local.size == 16 && joint.inverseBindMatrix.size == 16) {
                 "Joint matrices must contain 16 values."
             }
-            val jointWorld = if (joint.parentIndex in world.indices) {
-                multiply(world[joint.parentIndex], local)
+            val parent = joint.parentIndex
+            val value = if (parent in skin.joints.indices) {
+                multiply(resolveWorld(parent), local)
             } else {
                 local.copyOf()
             }
-            world += jointWorld
+            resolving[index] = false
+            world[index] = value
+            return value
         }
+        for (i in skin.joints.indices) resolveWorld(i)
         return skin.joints.indices.map { index ->
-            multiply(multiply(inverseMesh, world[index]), skin.joints[index].inverseBindMatrix)
+            multiply(multiply(inverseMesh, world[index]!!), skin.joints[index].inverseBindMatrix)
         }
     }
 

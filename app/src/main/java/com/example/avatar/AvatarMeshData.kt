@@ -22,7 +22,8 @@ enum class PartRole {
 
 data class MorphTargetData(
     val name: String,
-    val positionDeltas: FloatArray // length = vertexCount * 3
+    val positionDeltas: FloatArray, // length = vertexCount * 3
+    val normalDeltas: FloatArray? = null // optional glTF NORMAL target deltas
 )
 
 data class MeshPart(

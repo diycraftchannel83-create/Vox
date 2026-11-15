@@ -10,6 +10,32 @@ class DigitalHumanAssetValidatorTest {
             floatArrayOf(0f,0f,1f,0f,0f,1f), intArrayOf(0,1,2),
             floatArrayOf(0.8f,0.6f,0.5f,1f), morphTargets = morphs)
 
+    @Test fun productionEvidenceIsIncompleteByDefault() {
+        val evidence = DigitalHumanProductionEvidence()
+        assertFalse(evidence.complete)
+    }
+
+    @Test fun allProductionEvidenceMustBeExplicitlyApproved() {
+        val evidence = DigitalHumanProductionEvidence(
+            visualReviewPassed = true,
+            commercialRedistributionCleared = true,
+            sourceAndAttributionRecorded = true,
+            devicePerformancePassed = true,
+            previewExportParityPassed = true
+        )
+        assertTrue(evidence.complete)
+    }
+
+    @Test fun staticMeshCannotPassProductionGateWithDefaultEvidence() {
+        val report = DigitalHumanAssetValidator.inspect(
+            AvatarModel3D("static", "Static", listOf(validMesh()))
+        )
+        assertFalse(report.productionReady)
+        assertTrue(report.findings.any { it.code == "pbr_texture_pipeline_incomplete" })
+        assertTrue(report.findings.any { it.code == "commercial_license_missing" })
+        assertTrue(report.findings.any { it.code == "visual_review_missing" })
+    }
+
     @Test fun emptyModelIsRejected() {
         val report = DigitalHumanAssetValidator.inspect(AvatarModel3D("empty","Empty",emptyList()))
         assertTrue(report.hasErrors)

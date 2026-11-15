@@ -106,7 +106,7 @@ fun StudioScreen(
     onStartLiveMic: () -> Unit,
     onStopLiveMic: () -> Unit,
     onImportAudioUri: (Uri) -> Unit,
-    onSynthesizeScript: (String, Float, Float) -> Unit,
+    onSynthesizeScript: (String, Float, Float, String) -> Unit,
     onTogglePlayPause: () -> Unit,
     onSeekAudio: (Long) -> Unit,
     onExportVideo: () -> Unit,
@@ -477,7 +477,7 @@ private fun AudioAndTimelineSection(
     onSelectInputTab: (AudioInputTab) -> Unit,
     onMicTap: () -> Unit,
     onPickAudio: () -> Unit,
-    onSynthesizeScript: (String, Float, Float) -> Unit,
+    onSynthesizeScript: (String, Float, Float, String) -> Unit,
     onTogglePlayPause: () -> Unit,
     onSeekAudio: (Long) -> Unit
 ) {
@@ -729,13 +729,22 @@ private fun AudioFileControls(onPickAudio: () -> Unit) {
 @Composable
 private fun VoiceScriptControls(
     isBusy: Boolean,
-    onSynthesize: (String, Float, Float) -> Unit
+    onSynthesize: (String, Float, Float, String) -> Unit
 ) {
     var scriptText by rememberSaveable {
         mutableStateOf("Welcome to VoxSculpt. Every spoken syllable drives my 3D facial rig in real time.")
     }
     var pitch by rememberSaveable { mutableFloatStateOf(1.0f) }
     var rate by rememberSaveable { mutableFloatStateOf(1.0f) }
+    var languageTag by rememberSaveable { mutableStateOf("id-ID") }
+
+    val speechLanguages = listOf(
+        "id-ID" to "Indonesia",
+        "en-US" to "English",
+        "ar-SA" to "العربية",
+        "ja-JP" to "日本語",
+        "ko-KR" to "한국어"
+    )
 
     val quickScripts = listOf(
         "Studio Intro" to "Welcome to VoxSculpt. Every spoken syllable drives my 3D facial rig in real time.",
@@ -760,6 +769,28 @@ private fun VoiceScriptControls(
                         labelColor = ElectricCyan
                     ),
                     border = BorderStroke(1.dp, StudioBorder)
+                )
+            }
+        }
+
+        Text(
+            text = "Speech language · requires an installed device voice",
+            style = MaterialTheme.typography.labelMedium,
+            color = TextSecondary
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            speechLanguages.forEach { (tag, label) ->
+                AssistChip(
+                    onClick = { languageTag = tag },
+                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = if (languageTag == tag) ElectricCyan.copy(alpha = 0.2f) else StudioSurfaceHigh,
+                        labelColor = if (languageTag == tag) ElectricCyan else TextSecondary
+                    ),
+                    border = BorderStroke(1.dp, if (languageTag == tag) ElectricCyan else StudioBorder)
                 )
             }
         }
@@ -814,7 +845,7 @@ private fun VoiceScriptControls(
         }
 
         Button(
-            onClick = { onSynthesize(scriptText, pitch, rate) },
+            onClick = { onSynthesize(scriptText, pitch, rate, languageTag) },
             enabled = !isBusy && scriptText.isNotBlank(),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(

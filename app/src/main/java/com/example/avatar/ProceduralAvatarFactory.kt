@@ -56,6 +56,17 @@ object ProceduralAvatarFactory {
             morphTargetCount = 15,
             accentHex = 0xFF818CF8,
             isBuiltIn = true
+        ),
+        AvatarSpec(
+            id = "asian-woman",
+            name = "Asian Woman",
+            roleTag = "Premade Character · Static GLB",
+            format = AvatarFormat.GLB,
+            vertexCount = 132,
+            triangleCount = 176,
+            morphTargetCount = 0,
+            accentHex = 0xFFF0B7A4,
+            isBuiltIn = true
         )
     )
 

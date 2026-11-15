@@ -34,6 +34,11 @@ jobs:
         with:
           gradle-version: "9.3.1"
 
+      - name: Compile Android debug sources
+        run: |
+          set -euo pipefail
+          gradle --no-daemon compileDebugKotlin
+
       - name: Validate signing secrets
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

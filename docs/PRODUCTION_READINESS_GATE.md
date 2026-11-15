@@ -55,7 +55,9 @@ This gate is intentionally evidence-based. A successful Gradle build, valid GLB 
 
 - [ ] Explicit language/voice selection with device capability checks and clear unavailable-language errors.
 - [ ] Handle microphone permission denial, audio focus, interruption, lifecycle, and recorder errors.
+- [x] Reject structurally invalid imported avatar meshes and stop silently substituting the procedural default when an imported asset file is missing.
 - [ ] Bound import file sizes and validate GLB chunks, accessors, indices, textures, and decompression limits.
+- [x] Prevent audio-file imports from silently accepting a partial decode at the current 90-second safety limit; report the limit explicitly.
 - [ ] Handle export cancellation, low storage, codec failures, and cleanup of temporary files.
 - [ ] Test long recordings and long exports without unbounded memory growth.
 - [ ] Complete privacy policy, data-retention/deletion behavior, backup rules, accessibility, and Play Console declarations.

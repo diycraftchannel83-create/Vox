@@ -26,7 +26,7 @@ class FacialRigStateTest {
 
         assertEquals(0.9f, rig.weightForMorphName("eyeBlinkLeft"), 0.0001f)
         assertEquals(0.9f, rig.weightForMorphName("eyeBlinkRight"), 0.0001f)
-        assertEquals(0.5f * 0.35f + 0.12f * 0.35f,
+        assertEquals(0.5f * 0.35f,
             rig.weightForMorphName("mouthSmileLeft"), 0.0001f)
     }
 

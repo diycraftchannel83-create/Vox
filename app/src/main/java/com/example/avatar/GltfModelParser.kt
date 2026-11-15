@@ -1,0 +1,473 @@
+package com.example.avatar
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.opengl.Matrix
+import android.util.Base64
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.max
+import kotlin.math.min
+
+object GltfModelParser {
+
+    fun parse(file: File, id: String, name: String): AvatarModel3D {
+        val bytes = file.readBytes()
+        require(bytes.size >= 12) { "Invalid 3D model file." }
+
+        val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val magic = bb.getInt(0)
+
+        val jsonText: String
+        val binChunk: ByteArray?
+
+        if (magic == 0x46546C67) { // "glTF" binary GLB
+            val version = bb.getInt(4)
+            require(version == 2) { "Only glTF 2.0 GLB files are supported." }
+            var offset = 12
+            var jsonStr: String? = null
+            var binData: ByteArray? = null
+            while (offset + 8 <= bytes.size) {
+                val chunkLength = bb.getInt(offset)
+                val chunkType = bb.getInt(offset + 4)
+                val dataStart = offset + 8
+                val dataEnd = (dataStart + chunkLength).coerceAtMost(bytes.size)
+                when (chunkType) {
+                    0x4E4F534A -> jsonStr = String(bytes, dataStart, dataEnd - dataStart, Charsets.UTF_8)
+                    0x004E4942 -> binData = bytes.copyOfRange(dataStart, dataEnd)
+                }
+                offset = dataEnd
+            }
+            jsonText = requireNotNull(jsonStr) { "GLB missing JSON chunk." }
+            binChunk = binData
+        } else {
+            jsonText = String(bytes, Charsets.UTF_8)
+            binChunk = null
+        }
+
+        val root = JSONObject(jsonText)
+        val buffers = resolveBuffers(root, binChunk)
+        val bufferViews = root.optJSONArray("bufferViews") ?: JSONArray()
+        val accessors = root.optJSONArray("accessors") ?: JSONArray()
+        val meshes = root.optJSONArray("meshes") ?: JSONArray()
+        val materials = root.optJSONArray("materials") ?: JSONArray()
+        val textures = root.optJSONArray("textures") ?: JSONArray()
+        val images = root.optJSONArray("images") ?: JSONArray()
+        val nodes = root.optJSONArray("nodes") ?: JSONArray()
+
+        val decodedBitmaps = HashMap<Int, Bitmap>()
+        val parts = ArrayList<MeshPart>()
+
+        // Traverse scene nodes to collect world transforms per mesh
+        val meshTransforms = ArrayList<Pair<Int, FloatArray>>()
+        val scenes = root.optJSONArray("scenes")
+        val sceneIdx = root.optInt("scene", 0)
+        if (scenes != null && scenes.length() > 0 && nodes.length() > 0) {
+            val scene = scenes.optJSONObject(sceneIdx) ?: scenes.getJSONObject(0)
+            val rootNodes = scene.optJSONArray("nodes") ?: JSONArray()
+            val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
+            for (i in 0 until rootNodes.length()) {
+                traverseNode(rootNodes.getInt(i), identity, nodes, meshTransforms)
+            }
+        } else {
+            val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
+            for (m in 0 until meshes.length()) {
+                meshTransforms.add(m to identity)
+            }
+        }
+
+        for ((meshIdx, worldMat) in meshTransforms) {
+            val meshObj = meshes.optJSONObject(meshIdx) ?: continue
+            val meshName = meshObj.optString("name", "mesh_$meshIdx")
+            val targetNames = meshObj.optJSONObject("extras")?.optJSONArray("targetNames")
+            val primitives = meshObj.optJSONArray("primitives") ?: continue
+
+            for (pIdx in 0 until primitives.length()) {
+                val prim = primitives.getJSONObject(pIdx)
+                val attrs = prim.optJSONObject("attributes") ?: continue
+                val posAccIdx = attrs.optInt("POSITION", -1)
+                if (posAccIdx < 0) continue
+
+                val positions = readVec3Float(accessors.getJSONObject(posAccIdx), bufferViews, buffers)
+                val vCount = positions.size / 3
+                if (vCount == 0) continue
+
+                transformPoints(positions, worldMat)
+
+                val normals = if (attrs.has("NORMAL")) {
+                    val rawN = readVec3Float(accessors.getJSONObject(attrs.getInt("NORMAL")), bufferViews, buffers)
+                    transformNormals(rawN, worldMat)
+                    rawN
+                } else null
+
+                val uvs = if (attrs.has("TEXCOORD_0")) {
+                    readVec2Float(accessors.getJSONObject(attrs.getInt("TEXCOORD_0")), bufferViews, buffers, vCount)
+                } else {
+                    FloatArray(vCount * 2)
+                }
+
+                val indices = if (prim.has("indices")) {
+                    readIndices(accessors.getJSONObject(prim.getInt("indices")), bufferViews, buffers)
+                } else {
+                    IntArray(vCount) { it }
+                }
+
+                val finalNormals = normals ?: ProceduralAvatarFactory.computeSmoothNormals(positions, indices)
+
+                // Read material & embedded baseColorTexture
+                var baseColor = floatArrayOf(0.85f, 0.87f, 0.92f, 1f)
+                var metallic = 0.12f
+                var roughness = 0.45f
+                var emissive = floatArrayOf(0f, 0f, 0f)
+                var texBitmap: Bitmap? = null
+
+                val matIdx = prim.optInt("material", -1)
+                if (matIdx in 0 until materials.length()) {
+                    val mat = materials.getJSONObject(matIdx)
+                    val pbr = mat.optJSONObject("pbrMetallicRoughness")
+                    if (pbr != null) {
+                        pbr.optJSONArray("baseColorFactor")?.let { arr ->
+                            if (arr.length() >= 4) {
+                                baseColor = floatArrayOf(
+                                    arr.getDouble(0).toFloat(),
+                                    arr.getDouble(1).toFloat(),
+                                    arr.getDouble(2).toFloat(),
+                                    arr.getDouble(3).toFloat()
+                                )
+                            }
+                        }
+                        metallic = pbr.optDouble("metallicFactor", 0.12).toFloat()
+                        roughness = pbr.optDouble("roughnessFactor", 0.45).toFloat()
+                        val texRef = pbr.optJSONObject("baseColorTexture")
+                        if (texRef != null) {
+                            val texIdx = texRef.optInt("index", -1)
+                            if (texIdx in 0 until textures.length()) {
+                                val srcIdx = textures.getJSONObject(texIdx).optInt("source", -1)
+                                if (srcIdx in 0 until images.length()) {
+                                    texBitmap = decodedBitmaps.getOrPut(srcIdx) {
+                                        decodeGltfImage(images.getJSONObject(srcIdx), bufferViews, buffers)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    mat.optJSONArray("emissiveFactor")?.let { arr ->
+                        if (arr.length() >= 3) {
+                            emissive = floatArrayOf(
+                                arr.getDouble(0).toFloat(),
+                                arr.getDouble(1).toFloat(),
+                                arr.getDouble(2).toFloat()
+                            )
+                        }
+                    }
+                }
+
+                // Parse morph targets
+                val morphList = ArrayList<MorphTargetData>()
+                val targets = prim.optJSONArray("targets")
+                if (targets != null) {
+                    for (tIdx in 0 until targets.length()) {
+                        val tObj = targets.getJSONObject(tIdx)
+                        val deltaPosIdx = tObj.optInt("POSITION", -1)
+                        if (deltaPosIdx >= 0) {
+                            val deltas = readVec3Float(accessors.getJSONObject(deltaPosIdx), bufferViews, buffers)
+                            if (deltas.size == positions.size) {
+                                transformDeltas(deltas, worldMat)
+                                val tName = targetNames?.optString(tIdx, "morph_$tIdx") ?: "morph_$tIdx"
+                                morphList.add(MorphTargetData(tName, deltas))
+                            }
+                        }
+                    }
+                }
+
+                parts += MeshPart(
+                    name = "${meshName}_$pIdx",
+                    positions = positions,
+                    normals = finalNormals,
+                    uvs = uvs,
+                    indices = indices,
+                    baseColor = baseColor,
+                    metallic = metallic,
+                    roughness = roughness,
+                    emissive = emissive,
+                    textureBitmap = texBitmap,
+                    partRole = PartRole.CUSTOM_DEFORMABLE,
+                    morphTargets = morphList,
+                    isSkin = true
+                )
+            }
+        }
+
+        require(parts.isNotEmpty()) { "No valid 3D meshes found in glTF/GLB file." }
+        normalizeAvatarParts(parts)
+
+        return AvatarModel3D(
+            id = id,
+            name = name,
+            parts = parts,
+            autoJawMinY = -0.45f,
+            autoJawMaxY = -0.04f,
+            autoMouthCenterY = -0.15f,
+            autoMouthFrontZ = 0.14f,
+            isCustomImported = true
+        )
+    }
+
+    private fun resolveBuffers(root: JSONObject, binChunk: ByteArray?): List<ByteArray> {
+        val out = ArrayList<ByteArray>()
+        val buffersArr = root.optJSONArray("buffers") ?: return out
+        for (i in 0 until buffersArr.length()) {
+            val bufObj = buffersArr.getJSONObject(i)
+            val uri = bufObj.optString("uri", "")
+            val bytes = when {
+                uri.isEmpty() && i == 0 && binChunk != null -> binChunk
+                uri.startsWith("data:") -> {
+                    val comma = uri.indexOf(',')
+                    if (comma >= 0) Base64.decode(uri.substring(comma + 1), Base64.DEFAULT) else ByteArray(0)
+                }
+                else -> ByteArray(0)
+            }
+            out.add(bytes)
+        }
+        return out
+    }
+
+    private fun decodeGltfImage(
+        imgObj: JSONObject,
+        bufferViews: JSONArray,
+        buffers: List<ByteArray>
+    ): Bitmap {
+        val uri = imgObj.optString("uri", "")
+        val rawBytes = if (uri.startsWith("data:")) {
+            val comma = uri.indexOf(',')
+            Base64.decode(uri.substring(comma + 1), Base64.DEFAULT)
+        } else if (imgObj.has("bufferView")) {
+            val bv = bufferViews.getJSONObject(imgObj.getInt("bufferView"))
+            val bufIdx = bv.optInt("buffer", 0)
+            val offset = bv.optInt("byteOffset", 0)
+            val len = bv.getInt("byteLength")
+            val buf = buffers[bufIdx]
+            buf.copyOfRange(offset, (offset + len).coerceAtMost(buf.size))
+        } else {
+            ByteArray(0)
+        }
+        return if (rawBytes.isNotEmpty()) {
+            BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size)
+                ?: Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        } else {
+            Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        }
+    }
+
+    private fun traverseNode(
+        nodeIdx: Int,
+        parentMat: FloatArray,
+        nodes: JSONArray,
+        outMeshes: MutableList<Pair<Int, FloatArray>>
+    ) {
+        if (nodeIdx !in 0 until nodes.length()) return
+        val node = nodes.getJSONObject(nodeIdx)
+        val local = FloatArray(16)
+        Matrix.setIdentityM(local, 0)
+
+        val matArr = node.optJSONArray("matrix")
+        if (matArr != null && matArr.length() == 16) {
+            for (i in 0 until 16) local[i] = matArr.getDouble(i).toFloat()
+        } else {
+            val t = node.optJSONArray("translation")
+            val r = node.optJSONArray("rotation")
+            val s = node.optJSONArray("scale")
+            if (t != null && t.length() >= 3) {
+                Matrix.translateM(local, 0, t.getDouble(0).toFloat(), t.getDouble(1).toFloat(), t.getDouble(2).toFloat())
+            }
+            if (r != null && r.length() >= 4) {
+                val qMat = quatToMatrix(
+                    r.getDouble(0).toFloat(),
+                    r.getDouble(1).toFloat(),
+                    r.getDouble(2).toFloat(),
+                    r.getDouble(3).toFloat()
+                )
+                val tmp = FloatArray(16)
+                Matrix.multiplyMM(tmp, 0, local, 0, qMat, 0)
+                System.arraycopy(tmp, 0, local, 0, 16)
+            }
+            if (s != null && s.length() >= 3) {
+                Matrix.scaleM(local, 0, s.getDouble(0).toFloat(), s.getDouble(1).toFloat(), s.getDouble(2).toFloat())
+            }
+        }
+
+        val world = FloatArray(16)
+        Matrix.multiplyMM(world, 0, parentMat, 0, local, 0)
+
+        if (node.has("mesh")) {
+            outMeshes.add(node.getInt("mesh") to world)
+        }
+        val children = node.optJSONArray("children")
+        if (children != null) {
+            for (i in 0 until children.length()) {
+                traverseNode(children.getInt(i), world, nodes, outMeshes)
+            }
+        }
+    }
+
+    private fun quatToMatrix(x: Float, y: Float, z: Float, w: Float): FloatArray {
+        val m = FloatArray(16)
+        val xx = x * x; val yy = y * y; val zz = z * z
+        val xy = x * y; val xz = x * z; val yz = y * z
+        val wx = w * x; val wy = w * y; val wz = w * z
+        m[0] = 1f - 2f * (yy + zz); m[4] = 2f * (xy - wz); m[8] = 2f * (xz + wy); m[12] = 0f
+        m[1] = 2f * (xy + wz); m[5] = 1f - 2f * (xx + zz); m[9] = 2f * (yz - wx); m[13] = 0f
+        m[2] = 2f * (xz - wy); m[6] = 2f * (yz + wx); m[10] = 1f - 2f * (xx + yy); m[14] = 0f
+        m[3] = 0f; m[7] = 0f; m[11] = 0f; m[15] = 1f
+        return m
+    }
+
+    private fun readVec3Float(
+        acc: JSONObject,
+        bufferViews: JSONArray,
+        buffers: List<ByteArray>
+    ): FloatArray {
+        val count = acc.getInt("count")
+        val bvIdx = acc.optInt("bufferView", -1)
+        if (bvIdx < 0) return FloatArray(count * 3)
+        val bv = bufferViews.getJSONObject(bvIdx)
+        val buf = buffers[bv.optInt("buffer", 0)]
+        val baseOffset = bv.optInt("byteOffset", 0) + acc.optInt("byteOffset", 0)
+        val stride = bv.optInt("byteStride", 12).coerceAtLeast(12)
+        val bb = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN)
+        val out = FloatArray(count * 3)
+        for (i in 0 until count) {
+            val pos = baseOffset + i * stride
+            if (pos + 12 <= buf.size) {
+                out[i * 3] = bb.getFloat(pos)
+                out[i * 3 + 1] = bb.getFloat(pos + 4)
+                out[i * 3 + 2] = bb.getFloat(pos + 8)
+            }
+        }
+        return out
+    }
+
+    private fun readVec2Float(
+        acc: JSONObject,
+        bufferViews: JSONArray,
+        buffers: List<ByteArray>,
+        expectedCount: Int
+    ): FloatArray {
+        val count = min(acc.getInt("count"), expectedCount)
+        val bvIdx = acc.optInt("bufferView", -1)
+        if (bvIdx < 0) return FloatArray(expectedCount * 2)
+        val bv = bufferViews.getJSONObject(bvIdx)
+        val buf = buffers[bv.optInt("buffer", 0)]
+        val baseOffset = bv.optInt("byteOffset", 0) + acc.optInt("byteOffset", 0)
+        val stride = bv.optInt("byteStride", 8).coerceAtLeast(8)
+        val bb = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN)
+        val out = FloatArray(expectedCount * 2)
+        for (i in 0 until count) {
+            val pos = baseOffset + i * stride
+            if (pos + 8 <= buf.size) {
+                out[i * 2] = bb.getFloat(pos)
+                out[i * 2 + 1] = bb.getFloat(pos + 4)
+            }
+        }
+        return out
+    }
+
+    private fun readIndices(
+        acc: JSONObject,
+        bufferViews: JSONArray,
+        buffers: List<ByteArray>
+    ): IntArray {
+        val count = acc.getInt("count")
+        val compType = acc.getInt("componentType")
+        val bvIdx = acc.optInt("bufferView", -1)
+        if (bvIdx < 0) return IntArray(count) { it }
+        val bv = bufferViews.getJSONObject(bvIdx)
+        val buf = buffers[bv.optInt("buffer", 0)]
+        val baseOffset = bv.optInt("byteOffset", 0) + acc.optInt("byteOffset", 0)
+        val bb = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN)
+        val out = IntArray(count)
+        when (compType) {
+            5121 -> for (i in 0 until count) out[i] = buf[baseOffset + i].toInt() and 0xFF
+            5123 -> for (i in 0 until count) out[i] = bb.getShort(baseOffset + i * 2).toInt() and 0xFFFF
+            5125 -> for (i in 0 until count) out[i] = bb.getInt(baseOffset + i * 4)
+            else -> for (i in 0 until count) out[i] = i
+        }
+        return out
+    }
+
+    private fun transformPoints(pts: FloatArray, mat: FloatArray) {
+        val v = FloatArray(4)
+        val r = FloatArray(4)
+        var i = 0
+        while (i + 2 < pts.size) {
+            v[0] = pts[i]; v[1] = pts[i + 1]; v[2] = pts[i + 2]; v[3] = 1f
+            Matrix.multiplyMV(r, 0, mat, 0, v, 0)
+            pts[i] = r[0]; pts[i + 1] = r[1]; pts[i + 2] = r[2]
+            i += 3
+        }
+    }
+
+    private fun transformDeltas(deltas: FloatArray, mat: FloatArray) {
+        val v = FloatArray(4)
+        val r = FloatArray(4)
+        var i = 0
+        while (i + 2 < deltas.size) {
+            v[0] = deltas[i]; v[1] = deltas[i + 1]; v[2] = deltas[i + 2]; v[3] = 0f
+            Matrix.multiplyMV(r, 0, mat, 0, v, 0)
+            deltas[i] = r[0]; deltas[i + 1] = r[1]; deltas[i + 2] = r[2]
+            i += 3
+        }
+    }
+
+    private fun transformNormals(norms: FloatArray, mat: FloatArray) {
+        val v = FloatArray(4)
+        val r = FloatArray(4)
+        var i = 0
+        while (i + 2 < norms.size) {
+            v[0] = norms[i]; v[1] = norms[i + 1]; v[2] = norms[i + 2]; v[3] = 0f
+            Matrix.multiplyMV(r, 0, mat, 0, v, 0)
+            val len = kotlin.math.sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]).coerceAtLeast(1e-6f)
+            norms[i] = r[0] / len; norms[i + 1] = r[1] / len; norms[i + 2] = r[2] / len
+            i += 3
+        }
+    }
+
+    private fun normalizeAvatarParts(parts: List<MeshPart>) {
+        var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
+        var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+        var minZ = Float.MAX_VALUE; var maxZ = -Float.MAX_VALUE
+        for (part in parts) {
+            val pos = part.positions
+            var i = 0
+            while (i + 2 < pos.size) {
+                minX = min(minX, pos[i]); maxX = max(maxX, pos[i])
+                minY = min(minY, pos[i + 1]); maxY = max(maxY, pos[i + 1])
+                minZ = min(minZ, pos[i + 2]); maxZ = max(maxZ, pos[i + 2])
+                i += 3
+            }
+        }
+        val cx = (minX + maxX) * 0.5f
+        val cy = (minY + maxY) * 0.5f
+        val cz = (minZ + maxZ) * 0.5f
+        val maxSpan = max(maxX - minX, max(maxY - minY, maxZ - minZ)).coerceAtLeast(1e-4f)
+        val scale = 1.48f / maxSpan
+
+        for (part in parts) {
+            val pos = part.positions
+            var i = 0
+            while (i + 2 < pos.size) {
+                pos[i] = (pos[i] - cx) * scale
+                pos[i + 1] = (pos[i + 1] - cy) * scale - 0.02f
+                pos[i + 2] = (pos[i + 2] - cz) * scale
+                i += 3
+            }
+            for (mt in part.morphTargets) {
+                val d = mt.positionDeltas
+                for (k in d.indices) d[k] *= scale
+            }
+        }
+    }
+}

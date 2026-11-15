@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">VoxSculpt</string>
+    <string name="nav_studio">Studio</string>
+    <string name="nav_avatars">Avatars</string>
+    <string name="nav_clips">Clips</string>
+    <string name="studio_title">VoxSculpt Studio</string>
+    <string name="export_video">Export MP4</string>
+    <string name="import_avatar">Import 3D Avatar</string>
+    <string name="import_audio">Import Audio</string>
+    <string name="mic_permission_rationale">Microphone access lets VoxSculpt drive real-time 3D facial lip-sync from your live voice.</string>
+</resources>

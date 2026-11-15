@@ -1,0 +1,6 @@
+{
+  "name": "VoxSculpt",
+  "description": "Real-time 3D avatar lip-sync and video clip generator driven by speech audio, with custom 3D model imports and high-quality OpenGL ES 3.0 rendering.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

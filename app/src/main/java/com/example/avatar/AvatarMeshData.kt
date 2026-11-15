@@ -1,0 +1,60 @@
+package com.example.avatar
+
+import android.graphics.Bitmap
+
+enum class PartRole {
+    HEAD,
+    JAW,
+    UPPER_LIP,
+    LOWER_LIP,
+    MOUTH_CAVITY,
+    LEFT_EYE,
+    RIGHT_EYE,
+    LEFT_EYELID,
+    RIGHT_EYELID,
+    LEFT_BROW,
+    RIGHT_BROW,
+    HAIR_ACCESSORY,
+    BODY_NECK,
+    HALO_RING,
+    CUSTOM_DEFORMABLE
+}
+
+data class MorphTargetData(
+    val name: String,
+    val positionDeltas: FloatArray // length = vertexCount * 3
+)
+
+data class MeshPart(
+    val name: String,
+    val positions: FloatArray,
+    val normals: FloatArray,
+    val uvs: FloatArray,
+    val indices: IntArray,
+    val baseColor: FloatArray, // RGBA [0..1]
+    val metallic: Float = 0.08f,
+    val roughness: Float = 0.48f,
+    val emissive: FloatArray = floatArrayOf(0f, 0f, 0f),
+    val textureBitmap: Bitmap? = null,
+    val partRole: PartRole = PartRole.HEAD,
+    val morphTargets: List<MorphTargetData> = emptyList(),
+    val isSkin: Boolean = false
+) {
+    val vertexCount: Int get() = positions.size / 3
+    val triangleCount: Int get() = indices.size / 3
+}
+
+data class AvatarModel3D(
+    val id: String,
+    val name: String,
+    val parts: List<MeshPart>,
+    val autoJawMinY: Float = -0.35f,
+    val autoJawMaxY: Float = -0.05f,
+    val autoMouthCenterY: Float = -0.14f,
+    val autoMouthFrontZ: Float = 0.18f,
+    val isCustomImported: Boolean = false
+) {
+    val totalVertices: Int get() = parts.sumOf { it.vertexCount }
+    val totalTriangles: Int get() = parts.sumOf { it.triangleCount }
+    val totalMorphTargets: Int get() = parts.sumOf { it.morphTargets.size }
+}

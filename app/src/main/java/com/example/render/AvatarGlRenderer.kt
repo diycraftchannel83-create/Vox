@@ -378,7 +378,7 @@ class AvatarGlRenderer(
             val vboUv = bufs[2]
             val ibo = bufs[3]
 
-            val hasMorphs = part.morphTargets.isNotEmpty()\n            val hasSkin = part.skinData != null && part.skinIndex in model.skins.indices\n            val needsDynamicBuffers = hasMorphs || hasSkin
+            val hasMorphs = part.morphTargets.isNotEmpty()\n            val hasSkin = part.skinData != null && (part.skinIndex?.let { it in model.skins.indices } == true)\n            val needsDynamicBuffers = hasMorphs || hasSkin
             val posBuf = toFloatBuffer(part.positions)
             val normBuf = toFloatBuffer(part.normals)
             val uvBuf = toFloatBuffer(part.uvs)

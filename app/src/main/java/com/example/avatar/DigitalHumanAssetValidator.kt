@@ -32,6 +32,20 @@ object DigitalHumanAssetValidator {
             if (part.indices.isEmpty() || part.indices.size % 3 != 0) error("invalid_indices_$index", "Mesh $index has no valid triangle index list.")
             else if (part.indices.any { it < 0 || it >= part.vertexCount }) error("index_out_of_range_$index", "Mesh $index contains an out-of-range index.")
             if (part.baseColor.size < 4) error("invalid_material_$index", "Mesh $index has no RGBA base color.")
+            part.skinData?.let { skin ->
+                if (skin.jointIndices.size != part.vertexCount * 4 || skin.weights.size != part.vertexCount * 4) {
+                    error("invalid_skin_influence_count_$index", "Mesh $index must provide four joint indices and weights per vertex.")
+                } else {
+                    if (skin.jointIndices.any { it < 0 }) error("invalid_skin_joint_index_$index", "Mesh $index contains a negative joint index.")
+                    for (vertex in 0 until skin.vertexCount) {
+                        val sum = (0..3).sumOf { skin.weights[vertex * 4 + it].toDouble() }.toFloat()
+                        if (skin.weights.slice(vertex * 4 until vertex * 4 + 4).any { !it.isFinite() || it < 0f } || (sum > 0f && kotlin.math.abs(sum - 1f) > 0.02f)) {
+                            error("invalid_skin_weights_$index", "Mesh $index has invalid or non-normalized skin weights.")
+                            break
+                        }
+                    }
+                }
+            }
             if (part.morphTargets.any { it.positionDeltas.size != part.positions.size }) error("invalid_morph_position_$index", "Mesh $index has a morph POSITION delta mismatch.")
             if (part.morphTargets.any { it.normalDeltas != null && it.normalDeltas.size != part.positions.size }) error("invalid_morph_normal_$index", "Mesh $index has a morph NORMAL delta mismatch.")
             if (part.morphTargets.any { it.normalDeltas == null }) warning("missing_morph_normals_$index", "Mesh $index has morph targets without NORMAL deltas.")

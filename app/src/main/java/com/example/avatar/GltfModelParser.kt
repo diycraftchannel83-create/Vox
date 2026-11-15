@@ -103,6 +103,12 @@ object GltfModelParser {
                     rawN
                 } else null
 
+                val skinData = if (attrs.has("JOINTS_0") && attrs.has("WEIGHTS_0")) {
+                    val joints = readVec4Ints(accessors.getJSONObject(attrs.getInt("JOINTS_0")), bufferViews, buffers, vCount)
+                    val weights = readVec4Weights(accessors.getJSONObject(attrs.getInt("WEIGHTS_0")), bufferViews, buffers, vCount)
+                    VertexSkinData(joints, weights)
+                } else null
+
                 val uvs = if (attrs.has("TEXCOORD_0")) {
                     readVec2Float(accessors.getJSONObject(attrs.getInt("TEXCOORD_0")), bufferViews, buffers, vCount)
                 } else {
@@ -201,7 +207,8 @@ object GltfModelParser {
                     textureBitmap = texBitmap,
                     partRole = PartRole.CUSTOM_DEFORMABLE,
                     morphTargets = morphList,
-                    isSkin = true
+                    isSkin = true,
+                    skinData = skinData
                 )
             }
         }
@@ -328,6 +335,63 @@ object GltfModelParser {
         m[2] = 2f * (xz - wy); m[6] = 2f * (yz + wx); m[10] = 1f - 2f * (xx + yy); m[14] = 0f
         m[3] = 0f; m[7] = 0f; m[11] = 0f; m[15] = 1f
         return m
+    }
+
+    private fun readVec4Ints(
+        acc: JSONObject, bufferViews: JSONArray, buffers: List<ByteArray>, expectedCount: Int
+    ): IntArray {
+        val count = min(acc.getInt("count"), expectedCount)
+        val componentType = acc.getInt("componentType")
+        val componentBytes = when (componentType) { 5121 -> 1; 5123 -> 2; else -> error("Unsupported JOINTS_0 componentType: $componentType") }
+        val bvIndex = acc.optInt("bufferView", -1)
+        require(bvIndex >= 0) { "JOINTS_0 accessor has no bufferView." }
+        val view = bufferViews.getJSONObject(bvIndex)
+        val bytes = buffers[view.optInt("buffer", 0)]
+        val elementBytes = componentBytes * 4
+        val stride = view.optInt("byteStride", elementBytes).coerceAtLeast(elementBytes)
+        val start = view.optInt("byteOffset", 0) + acc.optInt("byteOffset", 0)
+        val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val out = IntArray(expectedCount * 4)
+        for (v in 0 until count) for (c in 0..3) {
+            val offset = start + v * stride + c * componentBytes
+            require(offset + componentBytes <= bytes.size) { "JOINTS_0 accessor exceeds buffer bounds." }
+            out[v * 4 + c] = if (componentType == 5121) bytes[offset].toInt() and 0xFF else bb.getShort(offset).toInt() and 0xFFFF
+        }
+        return out
+    }
+
+    private fun readVec4Weights(
+        acc: JSONObject, bufferViews: JSONArray, buffers: List<ByteArray>, expectedCount: Int
+    ): FloatArray {
+        val count = min(acc.getInt("count"), expectedCount)
+        val componentType = acc.getInt("componentType")
+        val normalized = acc.optBoolean("normalized", false)
+        val componentBytes = when (componentType) { 5121 -> 1; 5123 -> 2; 5126 -> 4; else -> error("Unsupported WEIGHTS_0 componentType: $componentType") }
+        val bvIndex = acc.optInt("bufferView", -1)
+        require(bvIndex >= 0) { "WEIGHTS_0 accessor has no bufferView." }
+        val view = bufferViews.getJSONObject(bvIndex)
+        val bytes = buffers[view.optInt("buffer", 0)]
+        val elementBytes = componentBytes * 4
+        val stride = view.optInt("byteStride", elementBytes).coerceAtLeast(elementBytes)
+        val start = view.optInt("byteOffset", 0) + acc.optInt("byteOffset", 0)
+        val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val out = FloatArray(expectedCount * 4)
+        for (v in 0 until count) {
+            var total = 0f
+            for (c in 0..3) {
+                val offset = start + v * stride + c * componentBytes
+                require(offset + componentBytes <= bytes.size) { "WEIGHTS_0 accessor exceeds buffer bounds." }
+                val value = when (componentType) {
+                    5121 -> (bytes[offset].toInt() and 0xFF).toFloat() / if (normalized) 255f else 1f
+                    5123 -> (bb.getShort(offset).toInt() and 0xFFFF).toFloat() / if (normalized) 65535f else 1f
+                    else -> bb.getFloat(offset)
+                }.coerceAtLeast(0f)
+                out[v * 4 + c] = value
+                total += value
+            }
+            if (total > 1e-8f) for (c in 0..3) out[v * 4 + c] /= total
+        }
+        return out
     }
 
     private fun readVec3Float(

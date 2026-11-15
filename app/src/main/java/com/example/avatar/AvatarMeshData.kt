@@ -26,6 +26,26 @@ data class MorphTargetData(
     val normalDeltas: FloatArray? = null // optional glTF NORMAL target deltas
 )
 
+/** Four glTF vertex influences from JOINTS_0 / WEIGHTS_0. Indices are local to the skin. */
+data class VertexSkinData(
+    val jointIndices: IntArray,
+    val weights: FloatArray
+) {
+    val vertexCount: Int get() = jointIndices.size / 4
+}
+
+data class AvatarJoint(
+    val name: String,
+    val parentIndex: Int,
+    val inverseBindMatrix: FloatArray
+)
+
+data class AvatarSkin(
+    val joints: List<AvatarJoint>,
+    val skeletonRootNode: Int? = null
+)
+
+/** Skinning data is imported now; GPU skinning is a separate renderer milestone. */
 data class MeshPart(
     val name: String,
     val positions: FloatArray,
@@ -39,7 +59,9 @@ data class MeshPart(
     val textureBitmap: Bitmap? = null,
     val partRole: PartRole = PartRole.HEAD,
     val morphTargets: List<MorphTargetData> = emptyList(),
-    val isSkin: Boolean = false
+    val isSkin: Boolean = false,
+    val skinData: VertexSkinData? = null,
+    val skinIndex: Int? = null
 ) {
     val vertexCount: Int get() = positions.size / 3
     val triangleCount: Int get() = indices.size / 3
@@ -53,7 +75,8 @@ data class AvatarModel3D(
     val autoJawMaxY: Float = -0.05f,
     val autoMouthCenterY: Float = -0.14f,
     val autoMouthFrontZ: Float = 0.18f,
-    val isCustomImported: Boolean = false
+    val isCustomImported: Boolean = false,
+    val skins: List<AvatarSkin> = emptyList()
 ) {
     val totalVertices: Int get() = parts.sumOf { it.vertexCount }
     val totalTriangles: Int get() = parts.sumOf { it.triangleCount }

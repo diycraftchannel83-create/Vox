@@ -25,6 +25,13 @@ class DigitalHumanAssetValidatorTest {
         assertFalse(report.productionReady)
         assertTrue(report.findings.any { it.code == "no_facial_rig" })
     }
+    @Test fun malformedSkinInfluenceCountIsRejected() {
+        val mesh = validMesh().copy(skinData = VertexSkinData(intArrayOf(0,0,0,0), floatArrayOf(1f,0f,0f,0f)))
+        val report = DigitalHumanAssetValidator.inspect(AvatarModel3D("bad-skin","Bad Skin",listOf(mesh)))
+        assertTrue(report.hasErrors)
+        assertTrue(report.findings.any { it.code == "invalid_skin_influence_count_0" })
+    }
+
     @Test fun malformedMorphDeltaIsRejected() {
         val morph = MorphTargetData("jawOpen", floatArrayOf(0f,0f,0f))
         val report = DigitalHumanAssetValidator.inspect(AvatarModel3D("bad-morph","Bad Morph",listOf(validMesh(morphs=listOf(morph)))))

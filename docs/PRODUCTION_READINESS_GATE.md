@@ -11,7 +11,7 @@ This gate is intentionally evidence-based. A successful Gradle build, valid GLB 
 - The workflow is a build signal only; no device lab, visual quality, audio synchronization, crash-free, or Play Console acceptance evidence is included in that result.
 - The two bundled copies of `asian_woman.glb` are each 3,996 bytes. The project asset specification already identifies this as a small static prototype mesh, not a production digital-human asset.
 - The TTS generator now accepts an explicit BCP-47 language tag and checks whether the installed Android TTS engine supports it. A studio language selector is present for Indonesian, English, Arabic, Japanese, and Korean; actual voice availability and pronunciation quality still require device-level verification.
-- The current audio analyzer estimates visemes from audio frequency bands. This is not phoneme alignment.
+- The current audio analyzer still estimates visemes from audio frequency bands for microphone/imported audio. A timestamp-driven phoneme-to-viseme builder has been added as an alignment integration point, but a real phoneme alignment source is not yet connected.
 - The current custom renderer does not yet consume full normal/roughness/occlusion maps or play all glTF skeletal and morph-weight animation channels.
 
 ## Release-blocking work
@@ -43,7 +43,8 @@ This gate is intentionally evidence-based. A successful Gradle build, valid GLB 
 
 ### P0 — Speech and facial performance
 
-- [ ] Use phoneme/viseme timestamps from TTS or a speech-alignment stage.
+- [x] Add a deterministic timestamp-driven phoneme-to-viseme timeline builder and unit-test source (not yet executed).
+- [ ] Connect a real TTS/speech-alignment provider that supplies phoneme/viseme timestamps and feed those timestamps into the builder.
 - [ ] Preserve coarticulation and smooth transitions; avoid frequency-band heuristics as the sole source of phoneme identity.
 - [ ] Validate Indonesian and English first, then each additional supported language.
 - [ ] Validate P/B/M, F/V, TH, T/D/N, K/G, CH/SH, S/Z, vowels, and silence.
@@ -59,6 +60,13 @@ This gate is intentionally evidence-based. A successful Gradle build, valid GLB 
 - [ ] Test long recordings and long exports without unbounded memory growth.
 - [ ] Complete privacy policy, data-retention/deletion behavior, backup rules, accessibility, and Play Console declarations.
 - [ ] Complete crash/ANR monitoring and a device compatibility matrix.
+
+## Changes made on this branch
+
+- Added an explicit BCP-47 language selector for on-device TTS (Indonesian, English, Arabic, Japanese, Korean) and runtime voice-availability checks. Actual voice coverage and pronunciation quality still need device testing.
+- Added a timestamp-driven phoneme-to-viseme timeline builder with ARPABET-style phoneme mappings and test cases. It is an integration point, not a claim that phoneme recognition/alignment is already available.
+- Added a strict evidence-based digital-human production gate and tests.
+- Added repository README and this production checklist.
 
 ## Evidence-based validator
 

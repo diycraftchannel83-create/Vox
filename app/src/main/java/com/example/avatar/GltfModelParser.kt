@@ -100,11 +100,8 @@ object GltfModelParser {
                 val vCount = positions.size / 3
                 if (vCount == 0) continue
 
-                transformPoints(positions, worldMat)
-
                 val normals = if (attrs.has("NORMAL")) {
                     val rawN = readVec3Float(accessors.getJSONObject(attrs.getInt("NORMAL")), bufferViews, buffers)
-                    transformNormals(rawN, worldMat)
                     rawN
                 } else null
 
@@ -186,12 +183,10 @@ object GltfModelParser {
                         if (deltaPosIdx >= 0) {
                             val deltas = readVec3Float(accessors.getJSONObject(deltaPosIdx), bufferViews, buffers)
                             if (deltas.size == positions.size) {
-                                transformDeltas(deltas, worldMat)
                                 val normalDeltas = tObj.optInt("NORMAL", -1)
                                     .takeIf { it >= 0 }
                                     ?.let { readVec3Float(accessors.getJSONObject(it), bufferViews, buffers) }
                                     ?.takeIf { it.size == positions.size }
-                                    ?.also { transformDeltas(it, worldMat) }
                                 val tName = targetNames?.optString(tIdx, "morph_$tIdx") ?: "morph_$tIdx"
                                 morphList.add(MorphTargetData(tName, deltas, normalDeltas))
                             }
@@ -214,13 +209,14 @@ object GltfModelParser {
                     morphTargets = morphList,
                     isSkin = true,
                     skinData = skinData,
-                    skinIndex = instance.skinIndex.takeIf { it >= 0 }
+                    skinIndex = instance.skinIndex.takeIf { it >= 0 },
+                    nodeWorldMatrix = worldMat.copyOf()
                 )
             }
         }
 
         require(parts.isNotEmpty()) { "No valid 3D meshes found in glTF/GLB file." }
-        normalizeAvatarParts(parts)
+        val normalizationMatrix = calculateNormalizationMatrix(parts)
 
         return AvatarModel3D(
             id = id,
@@ -231,7 +227,8 @@ object GltfModelParser {
             autoMouthCenterY = -0.15f,
             autoMouthFrontZ = 0.14f,
             isCustomImported = true,
-            skins = avatarSkins
+            skins = avatarSkins,
+            normalizationMatrix = normalizationMatrix
         )
     }
 
@@ -600,39 +597,33 @@ object GltfModelParser {
         }
     }
 
-    private fun normalizeAvatarParts(parts: List<MeshPart>) {
+    private fun calculateNormalizationMatrix(parts: List<MeshPart>): FloatArray {
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
         var minZ = Float.MAX_VALUE; var maxZ = -Float.MAX_VALUE
+        val point = FloatArray(4)
+        val transformed = FloatArray(4)
         for (part in parts) {
-            val pos = part.positions
             var i = 0
-            while (i + 2 < pos.size) {
-                minX = min(minX, pos[i]); maxX = max(maxX, pos[i])
-                minY = min(minY, pos[i + 1]); maxY = max(maxY, pos[i + 1])
-                minZ = min(minZ, pos[i + 2]); maxZ = max(maxZ, pos[i + 2])
+            while (i + 2 < part.positions.size) {
+                point[0] = part.positions[i]; point[1] = part.positions[i + 1]
+                point[2] = part.positions[i + 2]; point[3] = 1f
+                Matrix.multiplyMV(transformed, 0, part.nodeWorldMatrix, 0, point, 0)
+                minX = min(minX, transformed[0]); maxX = max(maxX, transformed[0])
+                minY = min(minY, transformed[1]); maxY = max(maxY, transformed[1])
+                minZ = min(minZ, transformed[2]); maxZ = max(maxZ, transformed[2])
                 i += 3
             }
         }
         val cx = (minX + maxX) * 0.5f
         val cy = (minY + maxY) * 0.5f
         val cz = (minZ + maxZ) * 0.5f
-        val maxSpan = max(maxX - minX, max(maxY - minY, maxZ - minZ)).coerceAtLeast(1e-4f)
-        val scale = 1.48f / maxSpan
-
-        for (part in parts) {
-            val pos = part.positions
-            var i = 0
-            while (i + 2 < pos.size) {
-                pos[i] = (pos[i] - cx) * scale
-                pos[i + 1] = (pos[i + 1] - cy) * scale - 0.02f
-                pos[i + 2] = (pos[i + 2] - cz) * scale
-                i += 3
-            }
-            for (mt in part.morphTargets) {
-                val d = mt.positionDeltas
-                for (k in d.indices) d[k] *= scale
-            }
+        val span = max(maxX - minX, max(maxY - minY, maxZ - minZ)).coerceAtLeast(1e-4f)
+        val scale = 1.48f / span
+        return FloatArray(16).also {
+            Matrix.setIdentityM(it, 0)
+            Matrix.translateM(it, 0, -cx * scale, -cy * scale - 0.02f, -cz * scale)
+            Matrix.scaleM(it, 0, scale, scale, scale)
         }
     }
 }

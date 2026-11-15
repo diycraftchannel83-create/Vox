@@ -194,8 +194,10 @@ class AvatarGlRenderer(
         Matrix.rotateM(bodyModelMat, 0, Math.toDegrees((rig.headYaw * 0.25f).toDouble()).toFloat(), 0f, 1f, 0f)
 
         for (gp in gpuParts) {
-            val mat = if (gp.part.partRole == PartRole.BODY_NECK) bodyModelMat else headModelMat
-            System.arraycopy(mat, 0, modelMatrix, 0, 16)
+            val motionMat = if (gp.part.partRole == PartRole.BODY_NECK) bodyModelMat else headModelMat
+            val normalizedNode = FloatArray(16)
+            Matrix.multiplyMM(normalizedNode, 0, activeModel.normalizationMatrix, 0, gp.part.nodeWorldMatrix, 0)
+            Matrix.multiplyMM(modelMatrix, 0, motionMat, 0, normalizedNode, 0)
             computeNormalMatrix(modelMatrix, normalMatrix)
 
             GLES30.glUniformMatrix4fv(prog.uniformLocation("uModel"), 1, false, modelMatrix, 0)

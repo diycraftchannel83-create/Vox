@@ -64,7 +64,9 @@ data class MeshPart(
     val morphTargets: List<MorphTargetData> = emptyList(),
     val isSkin: Boolean = false,
     val skinData: VertexSkinData? = null,
-    val skinIndex: Int? = null
+    val skinIndex: Int? = null,
+    /** glTF node transform; vertices remain in mesh-local coordinates. */
+    val nodeWorldMatrix: FloatArray = FloatArray(16).also { android.opengl.Matrix.setIdentityM(it, 0) }
 ) {
     val vertexCount: Int get() = positions.size / 3
     val triangleCount: Int get() = indices.size / 3
@@ -79,7 +81,9 @@ data class AvatarModel3D(
     val autoMouthCenterY: Float = -0.14f,
     val autoMouthFrontZ: Float = 0.18f,
     val isCustomImported: Boolean = false,
-    val skins: List<AvatarSkin> = emptyList()
+    val skins: List<AvatarSkin> = emptyList(),
+    /** Model-space normalization applied after each mesh node transform. */
+    val normalizationMatrix: FloatArray = FloatArray(16).also { android.opengl.Matrix.setIdentityM(it, 0) }
 ) {
     val totalVertices: Int get() = parts.sumOf { it.vertexCount }
     val totalTriangles: Int get() = parts.sumOf { it.triangleCount }

@@ -62,4 +62,18 @@ class PhonemeVisemeTimelineBuilderTest {
         assertTrue(timeline.frames.all { it.rig.viseme == VisemeType.SIL })
     }
 
+    @Test fun nonLatinScriptsStillAnimateTheMouth() {
+        listOf("مرحبا", "こんにちは", "안녕하세요").forEach { script ->
+            val timeline = PhonemeVisemeTimelineBuilder.buildFromText(
+                text = script,
+                durationMs = 1000,
+                stepMs = 20,
+                transitionMs = 0
+            )
+            assertTrue("$script should create speaking frames", timeline.frames.any {
+                it.rig.viseme != VisemeType.SIL && it.rig.jawOpen > 0f
+            })
+        }
+    }
+
 }

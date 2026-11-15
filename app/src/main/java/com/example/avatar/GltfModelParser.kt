@@ -176,8 +176,13 @@ object GltfModelParser {
                             val deltas = readVec3Float(accessors.getJSONObject(deltaPosIdx), bufferViews, buffers)
                             if (deltas.size == positions.size) {
                                 transformDeltas(deltas, worldMat)
+                                val normalDeltas = tObj.optInt("NORMAL", -1)
+                                    .takeIf { it >= 0 }
+                                    ?.let { readVec3Float(accessors.getJSONObject(it), bufferViews, buffers) }
+                                    ?.takeIf { it.size == positions.size }
+                                    ?.also { transformDeltas(it, worldMat) }
                                 val tName = targetNames?.optString(tIdx, "morph_$tIdx") ?: "morph_$tIdx"
-                                morphList.add(MorphTargetData(tName, deltas))
+                                morphList.add(MorphTargetData(tName, deltas, normalDeltas))
                             }
                         }
                     }

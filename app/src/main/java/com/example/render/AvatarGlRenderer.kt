@@ -8,6 +8,7 @@ import android.opengl.Matrix
 import com.example.avatar.AvatarModel3D
 import com.example.avatar.MeshPart
 import com.example.avatar.PartRole
+import com.example.avatar.SkeletalSkinner
 import com.example.avatar.ProceduralAvatarFactory
 import com.example.model.FacialRigState
 import com.example.model.LightingPreset
@@ -221,61 +222,55 @@ class AvatarGlRenderer(
                 GLES30.glUniform1i(prog.uniformLocation("uHasTexture"), 0)
             }
 
-            // If imported glTF/GLB part has morph targets, evaluate blended vertex deltas on CPU -> VBO
-            if (gp.part.morphTargets.isNotEmpty() && gp.dynamicPosScratch != null && gp.dynamicPosBuffer != null) {
-                val base = gp.part.positions
+            // Deformation order: facial morph targets first, then skeletal skinning.
+            // This keeps lip/eyelid deltas in mesh-local space before joint transforms.
+            if (gp.dynamicPosScratch != null && gp.dynamicPosBuffer != null) {
                 val dst = gp.dynamicPosScratch
-                System.arraycopy(base, 0, dst, 0, base.size)
+                System.arraycopy(gp.part.positions, 0, dst, 0, dst.size)
                 for (mt in gp.part.morphTargets) {
-                    val w = rig.weightForMorphName(mt.name)
-                    if (w > 0.002f) {
-                        val d = mt.positionDeltas
-                        for (k in dst.indices) {
-                            dst[k] += d[k] * w
-                        }
+                    val weight = rig.weightForMorphName(mt.name)
+                    if (weight > 0.002f && mt.positionDeltas.size == dst.size) {
+                        for (k in dst.indices) dst[k] += mt.positionDeltas[k] * weight
                     }
                 }
+
+                val normalDst = gp.dynamicNormScratch
+                if (normalDst != null) {
+                    System.arraycopy(gp.part.normals, 0, normalDst, 0, normalDst.size)
+                    for (mt in gp.part.morphTargets) {
+                        val weight = rig.weightForMorphName(mt.name)
+                        val deltas = mt.normalDeltas
+                        if (weight > 0.002f && deltas != null && deltas.size == normalDst.size) {
+                            for (k in normalDst.indices) normalDst[k] += deltas[k] * weight
+                        }
+                    }
+                    normalizeVectors(normalDst)
+                }
+
+                val skinIndex = gp.part.skinIndex
+                val skinData = gp.part.skinData
+                if (skinIndex != null && skinData != null && skinIndex in activeModel.skins.indices && normalDst != null) {
+                    val skin = activeModel.skins[skinIndex]
+                    val palette = SkeletalSkinner.buildPalette(skin, gp.part.nodeWorldMatrix)
+                    val deformed = SkeletalSkinner.deform(dst, normalDst, skinData, palette)
+                    System.arraycopy(deformed.positions, 0, dst, 0, dst.size)
+                    System.arraycopy(deformed.normals, 0, normalDst, 0, normalDst.size)
+                }
+
                 gp.dynamicPosBuffer.clear()
                 gp.dynamicPosBuffer.put(dst)
                 gp.dynamicPosBuffer.position(0)
                 GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, gp.vboPos)
                 GLES30.glBufferSubData(GLES30.GL_ARRAY_BUFFER, 0, dst.size * 4, gp.dynamicPosBuffer)
-                GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
 
-                // Morph normals together with positions so skin shading stays coherent
-                // around animated lips, cheeks, eyelids, and jaw geometry.
-                if (gp.dynamicNormScratch != null && gp.dynamicNormBuffer != null) {
-                    val baseNormals = gp.part.normals
-                    val normalDst = gp.dynamicNormScratch
-                    System.arraycopy(baseNormals, 0, normalDst, 0, baseNormals.size)
-                    for (mt in gp.part.morphTargets) {
-                        val w = rig.weightForMorphName(mt.name)
-                        val deltas = mt.normalDeltas
-                        if (w > 0.002f && deltas != null && deltas.size == normalDst.size) {
-                            for (k in normalDst.indices) normalDst[k] += deltas[k] * w
-                        }
-                    }
-                    var n = 0
-                    while (n + 2 < normalDst.size) {
-                        val len = kotlin.math.sqrt(
-                            normalDst[n] * normalDst[n] +
-                                normalDst[n + 1] * normalDst[n + 1] +
-                                normalDst[n + 2] * normalDst[n + 2]
-                        ).coerceAtLeast(1e-6f)
-                        normalDst[n] /= len
-                        normalDst[n + 1] /= len
-                        normalDst[n + 2] /= len
-                        n += 3
-                    }
+                if (normalDst != null && gp.dynamicNormBuffer != null) {
                     gp.dynamicNormBuffer.clear()
                     gp.dynamicNormBuffer.put(normalDst)
                     gp.dynamicNormBuffer.position(0)
                     GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, gp.vboNorm)
-                    GLES30.glBufferSubData(
-                        GLES30.GL_ARRAY_BUFFER, 0, normalDst.size * 4, gp.dynamicNormBuffer
-                    )
-                    GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+                    GLES30.glBufferSubData(GLES30.GL_ARRAY_BUFFER, 0, normalDst.size * 4, gp.dynamicNormBuffer)
                 }
+                GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
             }
 
             GLES30.glBindVertexArray(gp.vao)
@@ -368,7 +363,7 @@ class AvatarGlRenderer(
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
     }
 
-    private fun uploadModelToGpu(model: AvatarModel3D) {
+    private fun normalizeVectors(values: FloatArray) {\n        var i = 0\n        while (i + 2 < values.size) {\n            val length = kotlin.math.sqrt(values[i] * values[i] + values[i + 1] * values[i + 1] + values[i + 2] * values[i + 2]).coerceAtLeast(1e-6f)\n            values[i] /= length; values[i + 1] /= length; values[i + 2] /= length\n            i += 3\n        }\n    }\n\n    private fun uploadModelToGpu(model: AvatarModel3D) {
         clearGpuParts()
         activeModel = model
 
@@ -383,7 +378,7 @@ class AvatarGlRenderer(
             val vboUv = bufs[2]
             val ibo = bufs[3]
 
-            val hasMorphs = part.morphTargets.isNotEmpty()
+            val hasMorphs = part.morphTargets.isNotEmpty()\n            val hasSkin = part.skinData != null && part.skinIndex in model.skins.indices\n            val needsDynamicBuffers = hasMorphs || hasSkin
             val posBuf = toFloatBuffer(part.positions)
             val normBuf = toFloatBuffer(part.normals)
             val uvBuf = toFloatBuffer(part.uvs)
@@ -396,7 +391,7 @@ class AvatarGlRenderer(
                 GLES30.GL_ARRAY_BUFFER,
                 part.positions.size * 4,
                 posBuf,
-                if (hasMorphs) GLES30.GL_DYNAMIC_DRAW else GLES30.GL_STATIC_DRAW
+                if (needsDynamicBuffers) GLES30.GL_DYNAMIC_DRAW else GLES30.GL_STATIC_DRAW
             )
             GLES30.glEnableVertexAttribArray(0)
             GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, 0, 0)
@@ -433,13 +428,13 @@ class AvatarGlRenderer(
                 ibo = ibo,
                 textureId = texId,
                 indexCount = part.indices.size,
-                dynamicPosScratch = if (hasMorphs) FloatArray(part.positions.size) else null,
-                dynamicPosBuffer = if (hasMorphs) {
+                dynamicPosScratch = if (needsDynamicBuffers) FloatArray(part.positions.size) else null,
+                dynamicPosBuffer = if (needsDynamicBuffers) {
                     ByteBuffer.allocateDirect(part.positions.size * 4)
                         .order(ByteOrder.nativeOrder()).asFloatBuffer()
                 } else null,
-                dynamicNormScratch = if (hasMorphs) FloatArray(part.normals.size) else null,
-                dynamicNormBuffer = if (hasMorphs) {
+                dynamicNormScratch = if (needsDynamicBuffers) FloatArray(part.normals.size) else null,
+                dynamicNormBuffer = if (needsDynamicBuffers) {
                     ByteBuffer.allocateDirect(part.normals.size * 4)
                         .order(ByteOrder.nativeOrder()).asFloatBuffer()
                 } else null

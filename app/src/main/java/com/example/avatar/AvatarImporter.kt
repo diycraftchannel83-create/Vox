@@ -67,6 +67,16 @@ class AvatarImporter(private val context: Context) {
         }
 
     fun loadModelFromSpec(spec: AvatarSpec): AvatarModel3D {
+        if (spec.id == "asian-woman") {
+            val bundledDir = File(context.filesDir, "avatars").apply { mkdirs() }
+            val bundledFile = File(bundledDir, "asian_woman.glb")
+            if (!bundledFile.exists() || bundledFile.length() == 0L) {
+                context.assets.open("avatars/asian_woman.glb").use { input ->
+                    bundledFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+            return GltfModelParser.parse(bundledFile, spec.id, spec.name)
+        }
         if (spec.isBuiltIn || spec.filePath == null) {
             return ProceduralAvatarFactory.buildAvatar(spec.id)
         }

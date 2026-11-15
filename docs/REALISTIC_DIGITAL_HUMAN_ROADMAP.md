@@ -133,6 +133,12 @@ A character is marked Production Ready only when:
 8. Asset license explicitly permits the intended commercial redistribution.
 9. Device performance and memory budgets are met on the declared minimum device tier.
 
+## Engineering progress — 2026-11-15
+
+The GLB import path now rejects invalid child-node references, multiple parents, cyclic node hierarchies, empty/duplicate skin joints, and out-of-range joint-node references. The asset validator now checks geometry/index bounds, finite normals and UVs, node and normalization matrices, material factor ranges, morph delta integrity, skin influence normalization and joint bounds, inverse-bind matrices, and joint-parent cycles.
+
+These checks are structural safeguards only. They do not establish that a face is anatomically realistic, that a rig deforms well in motion, or that the asset is safe for production rendering. The changes have been committed to the main branch but have deliberately not been build- or test-verified while the release workflow remains paused.
+
 ## Current limitations and truth-in-labeling
 
 The bundled `asian_woman.glb` is only a small static mesh and is not a production digital-human model. The current importer supports embedded GLB geometry, embedded images, base-color material data, and facial morph POSITION/NORMAL deltas. External glTF resource files are rejected with an explicit error (use a self-contained GLB). Skeletal skinning data is imported and the CPU linear-blend skinning path is connected to the renderer in bind pose; this has not yet been build- or device-verified. Runtime glTF animation clips and animated joint poses are not implemented. Normal-map sampling and full PBR texture channels are also not currently supported. The existing audio analyzer estimates visemes from audio bands; it is not phoneme-level alignment.

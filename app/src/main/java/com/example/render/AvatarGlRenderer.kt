@@ -167,7 +167,13 @@ class AvatarGlRenderer(
         GLES30.glUniform1f(prog.uniformLocation("uLipPress"), rig.lipPress)
         GLES30.glUniform1f(prog.uniformLocation("uUpperLipRaise"), rig.upperLipRaise)
         GLES30.glUniform1f(prog.uniformLocation("uEyeBlink"), rig.eyeBlink)
+        GLES30.glUniform1f(prog.uniformLocation("uLeftEyeBlink"), rig.leftEyeBlink ?: rig.eyeBlink)
+        GLES30.glUniform1f(prog.uniformLocation("uRightEyeBlink"), rig.rightEyeBlink ?: rig.eyeBlink)
         GLES30.glUniform1f(prog.uniformLocation("uBrowRaise"), rig.browRaise)
+        GLES30.glUniform1f(prog.uniformLocation("uLeftBrowRaise"), rig.leftBrowRaise ?: rig.browRaise)
+        GLES30.glUniform1f(prog.uniformLocation("uRightBrowRaise"), rig.rightBrowRaise ?: rig.browRaise)
+        GLES30.glUniform1f(prog.uniformLocation("uEyeSquint"), rig.eyeSquint)
+        GLES30.glUniform1f(prog.uniformLocation("uEyeWide"), rig.eyeWide)
         GLES30.glUniform1f(prog.uniformLocation("uVocalEnergy"), rig.vocalEnergy)
 
         val hasAnyMorphs = gpuParts.any { it.part.morphTargets.isNotEmpty() }

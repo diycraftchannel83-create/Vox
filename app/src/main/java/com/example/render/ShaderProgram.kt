@@ -65,7 +65,13 @@ uniform float uMouthPucker;
 uniform float uLipPress;
 uniform float uUpperLipRaise;
 uniform float uEyeBlink;
+uniform float uLeftEyeBlink;
+uniform float uRightEyeBlink;
 uniform float uBrowRaise;
+uniform float uLeftBrowRaise;
+uniform float uRightBrowRaise;
+uniform float uEyeSquint;
+uniform float uEyeWide;
 uniform float uVocalEnergy;
 
 out vec3 vWorldPos;
@@ -117,14 +123,17 @@ void main() {
     } else if (uPartRole == 7 || uPartRole == 8) {
         float side = (uPartRole == 7) ? -0.128 : 0.128;
         vec3 eyeCenter = vec3(side, 0.105, 0.285);
-        float blinkAngle = uEyeBlink * 1.15;
+        float sideBlink = (uPartRole == 7) ? uLeftEyeBlink : uRightEyeBlink;
+        float blinkAmount = clamp(sideBlink + uEyeSquint * 0.45 - uEyeWide * 0.35, 0.0, 1.0);
+        float blinkAngle = blinkAmount * 1.15;
         mat3 r = rotX(blinkAngle);
         pos = eyeCenter + r * (pos - eyeCenter);
         nrm = r * nrm;
     } else if (uPartRole == 9 || uPartRole == 10) {
-        pos.y += uBrowRaise * 0.032;
+        float sideBrow = (uPartRole == 9) ? uLeftBrowRaise : uRightBrowRaise;
+        pos.y += sideBrow * 0.032;
         float side = (uPartRole == 9) ? -1.0 : 1.0;
-        pos.y += side * (pos.x * 0.06 * uBrowRaise);
+        pos.y += side * (pos.x * 0.06 * sideBrow);
     } else if (uPartRole == 13) {
         float scaleBoost = 1.0 + uVocalEnergy * 0.14;
         pos.xz *= scaleBoost;

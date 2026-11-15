@@ -76,7 +76,7 @@ object GltfModelParser {
             val rootNodes = scene.optJSONArray("nodes") ?: JSONArray()
             val identity = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
             for (i in 0 until rootNodes.length()) {
-                traverseNode(rootNodes.getInt(i), identity, nodes, meshTransforms, null)
+                traverseNode(rootNodes.getInt(i), identity, nodes, meshTransforms)
             }
         } else if (nodes.length() > 0) {
             // A glTF file may omit the scenes array. In that case render the node forest

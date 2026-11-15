@@ -319,14 +319,35 @@ object GltfModelParser {
             val children = nodes.getJSONObject(nodeIndex).optJSONArray("children") ?: continue
             for (i in 0 until children.length()) {
                 val child = children.getInt(i)
-                if (child in parents.indices) parents[child] = nodeIndex
+                require(child in parents.indices) { "glTF node $nodeIndex references an out-of-range child node." }
+                require(parents[child] == -1 || parents[child] == nodeIndex) {
+                    "glTF node $child is assigned more than one parent."
+                }
+                parents[child] = nodeIndex
             }
         }
+        // Reject cycles even when a malformed file has no scene roots to traverse.
+        val nodeState = IntArray(nodes.length())
+        fun validateNodeChain(index: Int) {
+            if (nodeState[index] == 2) return
+            require(nodeState[index] != 1) { "glTF node hierarchy contains a cycle at node $index." }
+            nodeState[index] = 1
+            val parent = parents[index]
+            if (parent >= 0) validateNodeChain(parent)
+            nodeState[index] = 2
+        }
+        parents.indices.forEach(::validateNodeChain)
+
         return List(skins.length()) { skinIndex ->
             val skin = skins.getJSONObject(skinIndex)
             val jointNodes = skin.optJSONArray("joints") ?: JSONArray()
+            require(jointNodes.length() > 0) { "glTF skin $skinIndex contains no joints." }
             val nodeToJoint = HashMap<Int, Int>()
-            for (i in 0 until jointNodes.length()) nodeToJoint[jointNodes.getInt(i)] = i
+            for (i in 0 until jointNodes.length()) {
+                val nodeIndex = jointNodes.getInt(i)
+                require(nodeIndex in 0 until nodes.length()) { "glTF skin $skinIndex references an out-of-range joint node." }
+                require(nodeToJoint.put(nodeIndex, i) == null) { "glTF skin $skinIndex contains a duplicate joint node." }
+            }
             val inverseBindAccessor = skin.optInt("inverseBindMatrices", -1)
             val inverseBind = if (inverseBindAccessor >= 0) {
                 readMat4Float(accessors.getJSONObject(inverseBindAccessor), bufferViews, buffers, jointNodes.length())
@@ -348,6 +369,7 @@ object GltfModelParser {
                     chain.add(cursor)
                     cursor = parents.getOrElse(cursor) { -1 }
                 }
+                require(cursor == ancestor) { "glTF joint ancestry is inconsistent." }
                 val local = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
                 for (chainIndex in chain.indices.reversed()) {
                     val next = FloatArray(16)

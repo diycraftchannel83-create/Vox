@@ -98,7 +98,7 @@ void main() {
     // 13=HALO_RING, 14=CUSTOM_DEFORMABLE
     if (uPartRole == 1) {
         vec3 pivot = vec3(0.0, -0.09, -0.04);
-        float angle = uJawOpen * 0.42;
+        float angle = -uJawOpen * 0.62;
         mat3 r = rotX(angle);
         pos = pivot + r * (pos - pivot);
         pos.y -= uJawOpen * 0.025;
@@ -111,7 +111,7 @@ void main() {
         pos.z += uMouthPucker * 0.032 * centerW;
     } else if (uPartRole == 3) {
         vec3 pivot = vec3(0.0, -0.09, -0.04);
-        float angle = uJawOpen * 0.44;
+        float angle = -uJawOpen * 0.58;
         mat3 r = rotX(angle);
         pos = pivot + r * (pos - pivot);
         float xNorm = clamp(pos.x / 0.10, -1.0, 1.0);
@@ -120,6 +120,12 @@ void main() {
         pos.x *= (1.0 + uMouthWide * 0.22 - uMouthPucker * 0.30);
         pos.z += uMouthPucker * 0.034 * centerW;
         nrm = r * nrm;
+    } else if (uPartRole == 4) {
+        // Expand the dark oral cavity as the jaw opens so speech does not look
+        // like a flat painted mouth. Keep its center anchored behind the lips.
+        float openScale = 1.0 + clamp(uJawOpen, 0.0, 1.0) * 0.72;
+        pos.y = -0.175 + (pos.y + 0.175) * openScale;
+        pos.z += clamp(uJawOpen, 0.0, 1.0) * 0.012;
     } else if (uPartRole == 7 || uPartRole == 8) {
         float side = (uPartRole == 7) ? -0.128 : 0.128;
         vec3 eyeCenter = vec3(side, 0.105, 0.285);
@@ -141,7 +147,9 @@ void main() {
     } else if (uPartRole == 14 && uAutoRigMode == 1) {
         // Automatic procedural jaw & lip articulation for imported static OBJ/GLB models
         if (pos.z > 0.02 && pos.y < -0.02 && pos.y > -0.52) {
-            float yWeight = smoothstep(-0.02, -0.16, pos.y) * (1.0 - smoothstep(-0.36, -0.52, pos.y));
+            // Ordered smoothstep edges avoid undefined results on GLES drivers.
+            float yWeight = (1.0 - smoothstep(-0.16, -0.02, pos.y)) *
+                            smoothstep(-0.52, -0.36, pos.y);
             float zWeight = smoothstep(0.02, 0.18, pos.z);
             float xWeight = 1.0 - smoothstep(0.12, 0.34, abs(pos.x));
             float w = yWeight * zWeight * xWeight;

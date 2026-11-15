@@ -219,6 +219,17 @@ object ProceduralAvatarFactory {
             role = PartRole.HEAD
         )
 
+        // Lower teeth are attached to the moving mandible, not the stationary cranium.
+        parts += createCurvedBar(
+            name = "lower_teeth",
+            centerY = -0.205f, centerZ = 0.255f,
+            width = 0.128f, height = 0.016f, depth = 0.022f,
+            curveBack = 0.020f,
+            baseColor = floatArrayOf(0.91f, 0.91f, 0.89f, 1f),
+            metallic = 0.02f, roughness = 0.28f,
+            role = PartRole.JAW
+        )
+
         // 4. Sculpted Articulated Upper & Lower Lips
         parts += createLipMesh(
             name = "upper_lip",

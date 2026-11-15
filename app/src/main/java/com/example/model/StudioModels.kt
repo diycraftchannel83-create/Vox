@@ -48,6 +48,8 @@ data class FacialRigState(
             "jawforward" in name || "jaw_forward" in name -> jawForward
             "mouthpucker" in name || "mouthfunnel" in name || "viseme_oh" == name || "viseme_ou" == name ||
                 name == "viseme_o" || name == "viseme_u" -> mouthPucker
+            "mouthwide" in name || "mouthstretch" in name || "viseme_ee" == name || "viseme_ih" == name ->
+                mouthWide.unit()
             "mouthsmileleft" in name || "smileleft" in name -> side(leftSmile, smile, mouthWide)
             "mouthsmileright" in name || "smileright" in name -> side(rightSmile, smile, mouthWide)
             "mouthsmile" in name || "mouthstretch" in name || "viseme_ee" == name || "viseme_ih" == name ->

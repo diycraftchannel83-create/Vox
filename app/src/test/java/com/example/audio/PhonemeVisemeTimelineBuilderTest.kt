@@ -39,4 +39,41 @@ class PhonemeVisemeTimelineBuilderTest {
         assertEquals(4, timeline.frames.size)
         assertEquals(VisemeType.SIL, timeline.frames.last().rig.viseme)
     }
+    @Test fun buildsScriptTimedFallbackWithVowelsAndConsonants() {
+        val timeline = PhonemeVisemeTimelineBuilder.buildFromText(
+            text = "Mama buka pintu",
+            durationMs = 1200,
+            stepMs = 20,
+            transitionMs = 0
+        )
+        assertEquals(61, timeline.frames.size)
+        assertTrue(timeline.frames.any { it.rig.viseme == VisemeType.PP })
+        assertTrue(timeline.frames.any { it.rig.viseme == VisemeType.AA })
+        assertTrue(timeline.frames.any { it.rig.viseme == VisemeType.OU })
+        assertTrue(timeline.frames.any { it.rig.jawOpen > 0f })
+    }
+
+    @Test fun emptyScriptProducesSilentTimeline() {
+        val timeline = PhonemeVisemeTimelineBuilder.buildFromText(
+            text = "   ",
+            durationMs = 200,
+            stepMs = 20
+        )
+        assertTrue(timeline.frames.all { it.rig.viseme == VisemeType.SIL })
+    }
+
+    @Test fun nonLatinScriptsStillAnimateTheMouth() {
+        listOf("مرحبا", "こんにちは", "안녕하세요").forEach { script ->
+            val timeline = PhonemeVisemeTimelineBuilder.buildFromText(
+                text = script,
+                durationMs = 1000,
+                stepMs = 20,
+                transitionMs = 0
+            )
+            assertTrue("$script should create speaking frames", timeline.frames.any {
+                it.rig.viseme != VisemeType.SIL && it.rig.jawOpen > 0f
+            })
+        }
+    }
+
 }

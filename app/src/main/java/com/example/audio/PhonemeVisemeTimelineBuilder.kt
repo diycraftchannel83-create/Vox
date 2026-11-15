@@ -78,8 +78,118 @@ object PhonemeVisemeTimelineBuilder {
         "UH" to Shape(VisemeType.OU, jaw = 0.25f, pucker = 0.62f),
         "UW" to Shape(VisemeType.OU, jaw = 0.2f, pucker = 0.82f),
         "W" to Shape(VisemeType.OU, jaw = 0.16f, pucker = 0.78f),
-        "Y" to Shape(VisemeType.IH, jaw = 0.22f, wide = 0.45f)
+        "Y" to Shape(VisemeType.IH, jaw = 0.22f, wide = 0.45f),
+        "HH" to Shape(VisemeType.AA, jaw = 0.22f)
     )
+
+    /**
+     * Estimates phoneme timing from a script when the TTS engine does not expose
+     * word/phoneme boundary callbacks. This is a grapheme-duration fallback, not
+     * a forced-alignment result; actual speech timing still depends on the voice.
+     */
+    fun buildFromText(
+        text: String,
+        durationMs: Long,
+        stepMs: Long = 20L,
+        transitionMs: Long = 30L
+    ): VisemeTimeline {
+        require(durationMs >= 0L) { "Audio duration cannot be negative." }
+        val normalized = text.lowercase(Locale.ROOT)
+            .replace(Regex("[^a-z]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        if (text.isBlank() || durationMs == 0L) {
+            return build(durationMs, emptyList(), stepMs, transitionMs)
+        }
+
+        val tokens = mutableListOf<Pair<String, Int>>()
+        // Keep non-Latin scripts audible in the face rig too. This is deliberately
+        // a coarse visual fallback; accurate multilingual lip sync needs aligner data.
+        if (normalized.isEmpty()) {
+            text.codePoints().toArray().forEach { cp ->
+                val ch = String(Character.toChars(cp))
+                val symbol = when {
+                    ch.isBlank() || ch.all { it.isWhitespace() } -> "SIL"
+                    cp in 0x0600..0x06FF -> when (cp) {
+                        0x0627, 0x0622, 0x0623, 0x0625, 0x064E -> "AA"
+                        0x0648, 0x064F -> "UW"
+                        0x064A, 0x0650 -> "IY"
+                        0x0628, 0x0645 -> "M"
+                        0x0641 -> "F"
+                        0x062A, 0x062F, 0x0646, 0x0644 -> "D"
+                        0x0633, 0x0632 -> "S"
+                        0x0634, 0x062C -> "SH"
+                        0x0643, 0x0642, 0x062E, 0x063A -> "K"
+                        0x0631 -> "R"
+                        else -> "AA"
+                    }
+                    cp in 0x3040..0x30FF -> when (cp) {
+                        in intArrayOf(0x3042,0x304B,0x3055,0x305F,0x306A,0x306F,0x307E,0x3084,0x3089,0x308F,
+                            0x30A2,0x30AB,0x30B5,0x30BF,0x30CA,0x30CF,0x30DE,0x30E4,0x30E9,0x30EF) -> "AA"
+                        in intArrayOf(0x3044,0x304D,0x3057,0x3061,0x306B,0x3072,0x307F,0x308A,
+                            0x30A4,0x30AD,0x30B7,0x30C1,0x30CB,0x30D2,0x30DF,0x30EA) -> "IY"
+                        in intArrayOf(0x3046,0x304F,0x3059,0x3064,0x306C,0x3075,0x3080,0x3086,0x308B,
+                            0x30A6,0x30AF,0x30B9,0x30C4,0x30CC,0x30D5,0x30E0,0x30E6,0x30EB) -> "UW"
+                        in intArrayOf(0x3048,0x3051,0x305B,0x3066,0x306D,0x3078,0x3081,0x308C,
+                            0x30A8,0x30B1,0x30BB,0x30C6,0x30CD,0x30D8,0x30E1,0x30EC) -> "EH"
+                        else -> "OW"
+                    }
+                    cp in 0xAC00..0xD7A3 -> {
+                        val vowelIndex = ((cp - 0xAC00) % 0xAC00) / 28 % 21
+                        when (vowelIndex) {
+                            0, 2, 9, 10, 11 -> "AA"
+                            1, 3, 6, 7, 20 -> "IY"
+                            4, 5, 8, 12, 13, 14 -> "UW"
+                            16, 17, 18 -> "EH"
+                            else -> "OW"
+                        }
+                    }
+                    else -> "AA"
+                }
+                tokens += symbol to if (symbol in setOf("AA","EH","IY","OW","UW")) 3 else 1
+            }
+        }
+        var i = 0
+        while (i < normalized.length) {
+            if (normalized[i].isWhitespace()) {
+                tokens += "SIL" to 2
+                i++
+                continue
+            }
+            val pair = if (i + 1 < normalized.length) normalized.substring(i, i + 2) else ""
+            val digraph = when (pair) {
+                "ng" -> "NG"; "ny" -> "Y"; "sy" -> "SH"; "kh" -> "K"
+                "ch" -> "CH"; "sh" -> "SH"; "th" -> "TH"; "ph" -> "F"
+                else -> null
+            }
+            if (digraph != null) {
+                tokens += digraph to 2
+                i += 2
+                continue
+            }
+            val symbol = when (normalized[i]) {
+                'a' -> "AA"; 'e' -> "EH"; 'i' -> "IY"; 'o' -> "OW"; 'u' -> "UW"
+                'p' -> "P"; 'b' -> "B"; 'm' -> "M"; 'f' -> "F"; 'v' -> "V"
+                't' -> "T"; 'd' -> "D"; 'n' -> "N"; 'l' -> "L"; 'k' -> "K"
+                'g' -> "G"; 'c' -> "S"; 's' -> "S"; 'z' -> "Z"; 'r' -> "R"
+                'j' -> "JH"; 'w' -> "W"; 'y' -> "Y"; 'h' -> "HH"
+                else -> "SIL"
+            }
+            tokens += symbol to if (symbol in setOf("AA", "EH", "IY", "OW", "UW")) 3 else 1
+            i++
+        }
+
+        val totalWeight = tokens.sumOf { it.second }.coerceAtLeast(1)
+        var cursor = 0L
+        val aligned = tokens.mapIndexedNotNull { index, token ->
+            val start = cursor
+            val share = if (index == tokens.lastIndex) durationMs - cursor
+                else (durationMs * token.second / totalWeight).coerceAtLeast(1L)
+            cursor = (cursor + share).coerceAtMost(durationMs)
+            if (token.first == "SIL") null else TimedPhoneme(token.first, start, cursor)
+        }
+        return build(durationMs, aligned, stepMs, transitionMs)
+    }
 
     fun build(
         durationMs: Long,

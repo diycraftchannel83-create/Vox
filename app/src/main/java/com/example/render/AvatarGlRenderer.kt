@@ -363,7 +363,16 @@ class AvatarGlRenderer(
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
     }
 
-    private fun normalizeVectors(values: FloatArray) {\n        var i = 0\n        while (i + 2 < values.size) {\n            val length = kotlin.math.sqrt(values[i] * values[i] + values[i + 1] * values[i + 1] + values[i + 2] * values[i + 2]).coerceAtLeast(1e-6f)\n            values[i] /= length; values[i + 1] /= length; values[i + 2] /= length\n            i += 3\n        }\n    }\n\n    private fun uploadModelToGpu(model: AvatarModel3D) {
+    private fun normalizeVectors(values: FloatArray) {
+        var i = 0
+        while (i + 2 < values.size) {
+            val length = kotlin.math.sqrt(values[i] * values[i] + values[i + 1] * values[i + 1] + values[i + 2] * values[i + 2]).coerceAtLeast(1e-6f)
+            values[i] /= length; values[i + 1] /= length; values[i + 2] /= length
+            i += 3
+        }
+    }
+
+    private fun uploadModelToGpu(model: AvatarModel3D) {
         clearGpuParts()
         activeModel = model
 
@@ -378,7 +387,9 @@ class AvatarGlRenderer(
             val vboUv = bufs[2]
             val ibo = bufs[3]
 
-            val hasMorphs = part.morphTargets.isNotEmpty()\n            val hasSkin = part.skinData != null && (part.skinIndex?.let { it in model.skins.indices } == true)\n            val needsDynamicBuffers = hasMorphs || hasSkin
+            val hasMorphs = part.morphTargets.isNotEmpty()
+            val hasSkin = part.skinData != null && (part.skinIndex?.let { it in model.skins.indices } == true)
+            val needsDynamicBuffers = hasMorphs || hasSkin
             val posBuf = toFloatBuffer(part.positions)
             val normBuf = toFloatBuffer(part.normals)
             val uvBuf = toFloatBuffer(part.uvs)

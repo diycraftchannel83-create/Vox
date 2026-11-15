@@ -66,7 +66,7 @@ class AvatarGlRenderer(
     var cameraPitchDeg: Float = 4f
 
     @Volatile
-    var cameraZoom: Float = 1.0f
+    var cameraZoom: Float = 1.18f
 
     private var viewportWidth = 720
     private var viewportHeight = 1280
@@ -87,7 +87,7 @@ class AvatarGlRenderer(
     fun resetCamera() {
         cameraYawDeg = 0f
         cameraPitchDeg = 4f
-        cameraZoom = 1.0f
+        cameraZoom = 1.18f
     }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
